@@ -1,0 +1,7 @@
+# VS Code generated stuff
+data-collector/.vscode
+data-collector/.devcontainer
+.vscode
+
+# Build of the data-collector app
+data-collector/build
