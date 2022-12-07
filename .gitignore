@@ -5,3 +5,4 @@ data-collector/.devcontainer
 
 # Build of the data-collector app
 data-collector/build
+data-collector/sdkconfig.old
