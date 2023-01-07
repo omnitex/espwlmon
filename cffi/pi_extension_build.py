@@ -8,7 +8,7 @@ ffibuilder.set_source("_pi",
     #include "pi.h"
 """,
     sources=['pi.c'],
-    libraries=['m'])
+    libraries=[])
 
 if __name__ == "__main__":
     ffibuilder.compile(verbose=True)
