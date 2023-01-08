@@ -1,10 +1,3 @@
-from _pi.lib import pi_approx
+from _wl_analysis.lib import print_partition_info
 
-approx = pi_approx(10)
-print(approx)
-assert str(approx).startswith("3.")
-
-approx = pi_approx(10000)
-print(approx)
-assert str(approx).startswith("3.1")
-
+print_partition_info()
