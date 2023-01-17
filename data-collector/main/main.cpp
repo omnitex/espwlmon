@@ -18,10 +18,16 @@ void app_main(void)
     const esp_partition_t *partition = get_wl_partition(NULL);
 #endif
 
-    if (partition)
-        print_config_json(partition);
-    else
+    if (!partition) {
         ESP_LOGE(TAG, "Failed to get WL partition for analysis!");
-}
+        return;
+    }
 
-}
+    wl_config_t cfg = {};
+    get_wl_config(&cfg, partition);
+
+    print_config_json(&cfg);
+
+} // main()
+
+} // extern "C"

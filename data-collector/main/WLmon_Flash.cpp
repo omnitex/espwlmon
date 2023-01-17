@@ -35,6 +35,7 @@ esp_err_t WLmon_Flash::init()
     return ESP_OK;
 }
 
+#if 0
 size_t WLmon_Flash::chip_size()
 {
     return ESP_OK;
@@ -69,3 +70,4 @@ esp_err_t WLmon_Flash::flush()
 {
     return ESP_OK;
 }
+#endif
