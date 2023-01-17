@@ -51,8 +51,8 @@ public :
 
     //esp_err_t flush();
 
-    Flash_Access *get_drv();
-    wl_config_t *get_cfg();
+    //Flash_Access *get_drv();
+    //wl_config_t *get_cfg();
 
     bool configured = false;
     bool initialized = false;
@@ -89,5 +89,7 @@ void print_config_json(const wl_config_t *cfg);
 const esp_partition_t *get_wl_partition(const char *arg);
 
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *part);
+
+WLmon_Flash *wl_attach(const esp_partition_t *partition);
 
 #endif

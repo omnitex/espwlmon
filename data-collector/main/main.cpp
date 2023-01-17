@@ -3,6 +3,9 @@
 
 const char *TAG = "wlmon";
 
+// use this for something?
+static WLmon_Flash *wl_instance;
+
 extern "C"
 {
 
@@ -23,10 +26,16 @@ void app_main(void)
         return;
     }
 
+    WLmon_Flash *wl_flash = wl_attach(partition);
+
     wl_config_t cfg = {};
     get_wl_config(&cfg, partition);
 
     print_config_json(&cfg);
+
+    ESP_LOGI(TAG, "now json from instance");
+
+    print_config_json(&wl_flash->cfg);
 
 } // main()
 

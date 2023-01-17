@@ -1,5 +1,6 @@
 #include "esp_log.h"
 #include "wlmon.h"
+#include "Partition.h"
 
 static const char *TAG = "Wlmon_target";
 
@@ -39,3 +40,17 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 
     return ESP_OK;
 }
+
+#if 0
+Partition::Partition(const esp_partition_t *partition)
+{
+    this->partition = partition;
+}
+
+esp_err_t Partition::read(size_t src_addr, void *dest, size_t size)
+{
+    esp_err_t result = ESP_OK;
+    result = esp_partition_read(this->partition, src_addr, dest, size);
+    return result;
+}
+#endif
