@@ -1,7 +1,12 @@
+#include <new>
 #include <stdio.h>
 #include <string.h>
+#include "esp_log.h"
 #include "esp_spi_flash.h" // for SPI_FLASH_SEC_SIZE
+#include "esp32/rom/crc.h"
 #include "wlmon.h"
+
+static const char *TAG = "WLmon";
 
 void print_config_json(const esp_partition_t *partition)
 {
@@ -35,5 +40,20 @@ void print_config_json(const esp_partition_t *partition)
     printf("\"temp_buff_size\":\"0x%x\",", cfg.temp_buff_size);
     printf("\"crc\":\"0x%x\"", cfg.crc);
     printf("}");
+
+    ESP_LOGI(TAG, "\ncalculated crc: 0x%x", crc32_le(UINT32_MAX, (const unsigned char *)&cfg, offsetof(wl_config_t, crc)));
+
+    void *wlmon_flash_ptr = NULL;
+    WLmon_Flash *wlmon_flash = NULL;
+
+    wlmon_flash_ptr = malloc(sizeof(WLmon_Flash));
+    if (wlmon_flash_ptr == NULL) {
+        ESP_LOGE(TAG, "%s: can't allocate WLmon_Flash", __func__);
+        return;
+    }
+    wlmon_flash = new (wlmon_flash_ptr) WLmon_Flash();
+
+    wlmon_flash->config(&cfg, (Flash_Access *)partition);
+
     fflush(stdout);
 }

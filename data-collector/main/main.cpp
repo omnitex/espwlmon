@@ -1,3 +1,4 @@
+#include "esp_log.h"
 #include "wlmon.h"
 
 const char *TAG = "wlmon";
