@@ -8,7 +8,7 @@
 #include "Partition.h"
 #include "wlmon.h"
 
-static const char *TAG = "WLmon";
+static const char *TAG = "wlmon";
 
 void print_config_json(const wl_config_t *cfg)
 {
@@ -32,7 +32,9 @@ WLmon_Flash *wl_attach(const esp_partition_t *partition)
     WLmon_Flash *wlmon_flash = NULL;
     void *part_ptr = NULL;
     Partition *part = NULL;
+
     wl_config_t cfg;
+    esp_err_t result = ESP_OK;
 
     part_ptr = malloc(sizeof(Partition));
     if (part_ptr == NULL) {
@@ -48,9 +50,24 @@ WLmon_Flash *wl_attach(const esp_partition_t *partition)
     }
     wlmon_flash = new (wlmon_flash_ptr) WLmon_Flash();
 
-    get_wl_config(&cfg, partition);
+    result = get_wl_config(&cfg, partition);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed getting WL config from flash");
+        //TODO wl_detach()
+        return NULL;
+    }
 
-    wlmon_flash->config(&cfg, part);
+    result = wlmon_flash->reconstruct(&cfg, part);
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Failed reconstructing WL info");
+        //TODO cleanup
+        return NULL;
+    }
 
     return wlmon_flash;
+}
+
+void wl_detach()
+{
+    // TODO free allocated memory
 }

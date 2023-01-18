@@ -15,6 +15,8 @@ void app_main(int argc, char **argv)
 void app_main(void)
 #endif
 {
+    esp_err_t result = ESP_OK;
+
 #if CONFIG_IDF_TARGET_LINUX
     const esp_partition_t *partition = get_wl_partition(argv[1]);
 #else
@@ -26,17 +28,12 @@ void app_main(void)
         return;
     }
 
-    WLmon_Flash *wl_flash = wl_attach(partition);
-
-    wl_config_t cfg = {};
-    get_wl_config(&cfg, partition);
-
-    print_config_json(&cfg);
-
-    ESP_LOGI(TAG, "now json from instance");
-
-    print_config_json(&wl_flash->cfg);
-
+    wl_instance = wl_attach(partition);
+    if (wl_instance != NULL) {
+        //TODO json print from instance
+    } else {
+        ESP_LOGE(TAG, "Failed to attach to WL in '%s' partition", partition->label);
+    }
 } // main()
 
 } // extern "C"

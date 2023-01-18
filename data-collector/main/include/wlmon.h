@@ -37,7 +37,12 @@ public :
     WLmon_Flash();
     ~WLmon_Flash();
 
-    virtual esp_err_t config(wl_config_t *cfg, Flash_Access *flash_drv);
+    virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
+    esp_err_t recoverPos();
+
+    void fillOkBuff(int n);
+    bool OkBuffSet(int n);
+
     virtual esp_err_t init();
 
     //size_t chip_size();
@@ -75,13 +80,10 @@ public :
 
     esp_err_t initSections();
     esp_err_t updateWL();
-    esp_err_t recoverPos();
     size_t calcAddr(size_t addr);
 
     esp_err_t updateVersion();
     esp_err_t updateV1_V2();
-    void fillOkBuff(int n);
-    bool OkBuffSet(int n);
 };
 
 void print_config_json(const wl_config_t *cfg);
