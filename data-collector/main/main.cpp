@@ -3,7 +3,7 @@
 
 const char *TAG = "wlmon";
 
-// use this for something?
+// TODO static or not?
 static WLmon_Flash *wl_instance;
 
 extern "C"

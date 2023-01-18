@@ -77,11 +77,6 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     return result;
 }
 
-esp_err_t WLmon_Flash::init()
-{
-    return ESP_OK;
-}
-
 esp_err_t WLmon_Flash::recoverPos()
 {
     esp_err_t result = ESP_OK;

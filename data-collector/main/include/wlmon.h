@@ -42,6 +42,7 @@ public:
     uint32_t crc;           /*!< CRC of structure*/
 } wl_state_t;
 
+// simplified WL_FLash class from WL_Flash.h
 class WLmon_Flash
 {
 public :
@@ -54,49 +55,18 @@ public :
     void fillOkBuff(int n);
     bool OkBuffSet(int n);
 
-    virtual esp_err_t init();
-
-    //size_t chip_size();
-    //size_t sector_size();
-
-    //esp_err_t erase_sector(size_t sector);
-    //esp_err_t erase_range(size_t start_address, size_t size);
-
-    //esp_err_t write(size_t dest_addr, const void *src, size_t size);
-    //esp_err_t read(size_t src_addr, void *dest, size_t size);
-
-    //esp_err_t flush();
-
-    //Flash_Access *get_drv();
-    //wl_config_t *get_cfg();
-
-    //bool configured = false;
-    //bool initialized = false;
-
     wl_state_t state;
     wl_config_t cfg;
 
     Flash_Access *flash_drv = NULL;
 
-    //size_t addr_cfg;
     size_t addr_state1;
     size_t addr_state2;
-    //size_t index_state1;
-    //size_t index_state2;
 
-    size_t flash_size;
     uint32_t state_size;
     uint32_t cfg_size;
     uint8_t *temp_buff = NULL;
     size_t dummy_addr;
-    uint32_t pos_data[4];
-
-    //esp_err_t initSections();
-    //esp_err_t updateWL();
-    //size_t calcAddr(size_t addr);
-
-    //esp_err_t updateVersion();
-    //esp_err_t updateV1_V2();
 };
 
 const esp_partition_t *get_wl_partition(const char *arg);
