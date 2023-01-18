@@ -5,15 +5,6 @@
 #include "wlmon.h"
 
 static const char *TAG = "wlmon";
-#ifndef WL_CFG_CRC_CONST
-#define WL_CFG_CRC_CONST UINT32_MAX
-#endif
-
-#define WL_RESULT_CHECK(result) \
-    if (result != ESP_OK) { \
-        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
-        return (result); \
-    }
 
 WLmon_Flash::WLmon_Flash()
 {
@@ -60,6 +51,10 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     this->addr_state2 = this->cfg.start_addr + this->cfg.full_mem_size - this->state_size * 1 - this->cfg_size;
 
     this->flash_drv->read(this->addr_state1, &this->state, sizeof(wl_state_t));
+
+    if (this->state.crc != crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)&this->state, offsetof(wl_state_t, crc))) {
+        return ESP_ERR_INVALID_CRC;
+    }
 
     ESP_LOGI(TAG, "%s - config ID=%i, stored ID=%i, access_count=%i, block_size=%i, max_count=%i, pos=%i, move_count=0x%8.8X",
              __func__,

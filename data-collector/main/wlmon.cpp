@@ -10,18 +10,35 @@
 
 static const char *TAG = "wlmon";
 
-void print_config_json(const wl_config_t *cfg)
+void print_config_json(WLmon_Flash *wl)
 {
     printf("{");
-    printf("\"start_addr\":\"0x%x\",", cfg->start_addr);
-    printf("\"full_mem_size\":\"0x%x\",", cfg->full_mem_size);
-    printf("\"page_size\":\"0x%x\",", cfg->page_size);
-    printf("\"sector_size\":\"0x%x\",", cfg->sector_size);
-    printf("\"updaterate\":\"0x%x\",", cfg->updaterate);
-    printf("\"wr_size\":\"0x%x\",", cfg->wr_size);
-    printf("\"version\":\"0x%x\",", cfg->version);
-    printf("\"temp_buff_size\":\"0x%x\",", cfg->temp_buff_size);
-    printf("\"crc\":\"0x%x\"", cfg->crc);
+    printf("\"start_addr\":\"0x%x\",", wl->cfg.start_addr);
+    printf("\"full_mem_size\":\"0x%x\",", wl->cfg.full_mem_size);
+    printf("\"page_size\":\"0x%x\",", wl->cfg.page_size);
+    printf("\"sector_size\":\"0x%x\",", wl->cfg.sector_size);
+    printf("\"updaterate\":\"0x%x\",", wl->cfg.updaterate);
+    printf("\"wr_size\":\"0x%x\",", wl->cfg.wr_size);
+    printf("\"version\":\"0x%x\",", wl->cfg.version);
+    printf("\"temp_buff_size\":\"0x%x\",", wl->cfg.temp_buff_size);
+    printf("\"crc\":\"0x%x\"", wl->cfg.crc);
+    printf("}");
+    fflush(stdout);
+}
+
+void print_state_json(WLmon_Flash *wl)
+{
+    printf("{");
+    printf("\"pos\":\"0x%x\",", wl->state.pos);
+    printf("\"max_pos\":\"0x%x\",", wl->state.max_pos);
+    printf("\"move_count\":\"0x%x\",", wl->state.move_count);
+    printf("\"access_count\":\"0x%x\",", wl->state.access_count);
+    printf("\"max_count\":\"0x%x\",", wl->state.max_count);
+    printf("\"block_size\":\"0x%x\",", wl->state.block_size);
+    printf("\"version\":\"0x%x\",", wl->state.version);
+    printf("\"max_count\":\"0x%x\",", wl->state.max_count);
+    printf("\"device_id\":\"0x%x\",", wl->state.device_id);
+    printf("\"crc\":\"0x%x\"", wl->state.crc);
     printf("}");
     fflush(stdout);
 }
@@ -57,6 +74,7 @@ WLmon_Flash *wl_attach(const esp_partition_t *partition)
         return NULL;
     }
 
+    // TODO part implementing read for linux target
     result = wlmon_flash->reconstruct(&cfg, part);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed reconstructing WL info");

@@ -4,6 +4,17 @@
 #include "Flash_Access.h"
 #include "esp_partition.h"
 
+#ifndef WL_CFG_CRC_CONST
+#define WL_CFG_CRC_CONST UINT32_MAX
+#endif
+
+#define WL_RESULT_CHECK(result) \
+    if (result != ESP_OK) { \
+        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
+        return (result); \
+    }
+
+
 /* Struct definitions taken from WL_Config.h and WL_State.h*/
 typedef struct WL_Config_s {
     size_t   start_addr;    /*!< start address in the flash*/
@@ -59,17 +70,19 @@ public :
     //Flash_Access *get_drv();
     //wl_config_t *get_cfg();
 
-    bool configured = false;
-    bool initialized = false;
+    //bool configured = false;
+    //bool initialized = false;
+
     wl_state_t state;
     wl_config_t cfg;
+
     Flash_Access *flash_drv = NULL;
 
-    size_t addr_cfg;
+    //size_t addr_cfg;
     size_t addr_state1;
     size_t addr_state2;
-    size_t index_state1;
-    size_t index_state2;
+    //size_t index_state1;
+    //size_t index_state2;
 
     size_t flash_size;
     uint32_t state_size;
@@ -78,20 +91,22 @@ public :
     size_t dummy_addr;
     uint32_t pos_data[4];
 
-    esp_err_t initSections();
-    esp_err_t updateWL();
-    size_t calcAddr(size_t addr);
+    //esp_err_t initSections();
+    //esp_err_t updateWL();
+    //size_t calcAddr(size_t addr);
 
-    esp_err_t updateVersion();
-    esp_err_t updateV1_V2();
+    //esp_err_t updateVersion();
+    //esp_err_t updateV1_V2();
 };
-
-void print_config_json(const wl_config_t *cfg);
 
 const esp_partition_t *get_wl_partition(const char *arg);
 
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *part);
 
 WLmon_Flash *wl_attach(const esp_partition_t *partition);
+
+void print_config_json(WLmon_Flash *wl);
+
+void print_state_json(WLmon_Flash *wl);
 
 #endif
