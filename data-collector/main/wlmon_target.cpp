@@ -6,13 +6,37 @@ static const char *TAG = "wlmon";
 
 const esp_partition_t *get_wl_partition(const char *arg)
 {
-    const esp_partition_t *partition = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA,
-        ESP_PARTITION_SUBTYPE_ANY,
-        "storage"
-    );
+    wl_config_t test_cfg = {};
+    esp_err_t result = ESP_OK;
 
-    // TODO check fatfs boot sector size vs partition size
+    const esp_partition_t *partition = NULL;
+    const esp_partition_t *candidate = NULL;
+
+    // subtype any for potential data partitions different than FAT
+    esp_partition_iterator_t iterator = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
+
+    // iterate throught all data partitions
+    while (iterator != NULL)
+    {
+        candidate = esp_partition_get(iterator);
+
+        if (candidate != NULL) {
+            ESP_LOGI(TAG, "partition candidate: '%s' of size 0x%x", candidate->label, candidate->size);
+
+            // getting config checks the CRC, which is valid only in WL partition, otherwise it's random data
+            result = get_wl_config(&test_cfg, candidate);
+            if (result == ESP_OK) {
+                partition = candidate;
+                ESP_LOGI(TAG, "partition '%s' @ 0x%x of size 0x%x has correct cfg CRC", partition->label, partition->address, partition->size);
+                break;
+            }
+        }
+
+        iterator = esp_partition_next(iterator);
+    }
+
+    esp_partition_iterator_release(iterator);
+
 
     return partition;
 }
