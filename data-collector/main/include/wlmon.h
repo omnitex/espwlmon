@@ -14,7 +14,6 @@
         return (result); \
     }
 
-
 /* Struct definitions taken from WL_Config.h and WL_State.h*/
 typedef struct WL_Config_s {
     size_t   start_addr;    /*!< start address in the flash*/
@@ -69,15 +68,64 @@ public :
     size_t dummy_addr;
 };
 
-const esp_partition_t *get_wl_partition(const char *arg);
+/**
+ * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
+ *
+ * @param arg On target, unused, searching for partition in flash. TODO: On linux file containing partition image.
+ *
+ * @return Pointer to a found (or constructed) WL partition or NULL
+*/
+const esp_partition_t *get_wl_partition(void *arg);
 
-esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *part);
+/**
+ * @brief Obtain valid, if present, wear leveling config from given partition
+ *
+ * @param cfg Pointer to config which will be written
+ * @param partition Partition from which to obtain valid WL config
+ *
+ * @return
+ *       - ESP_OK, if config was read, is valid and written correctly;
+ *       - ESP_ERR_FLASH_PROTECTED, if partition has encrypted flag set
+ *       - ESP_ERR_INVALID_CRC, if config CRC failed to match its stored CRC
+*/
+esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition);
 
+/**
+ * @brief Reconstructs WL status and stores it in created WLmon_Flash instance
+ *
+ * @param partition Partition to which to "attach"; from which to reconstruct WL status
+ *
+ * @return Created and filled WLmon_Flash instance or NULL
+*/
 WLmon_Flash *wl_attach(const esp_partition_t *partition);
 
+/**
+ * @brief Check that WL state CRC matches its stored CRC
+ *
+ * @param state wl_state_t of which to check CRC
+ *
+ * @return
+ *       - ESP_OK, if calculated CRC matches stored CRC
+ *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
+*/
 esp_err_t checkStateCRC(wl_state_t *state);
+
+/**
+ * @brief Check that WL config CRC matches its stored CRC
+ *
+ * @param state wl_config_t of which to check CRC
+ *
+ * @return
+ *       - ESP_OK, if calculated CRC matches stored CRC
+ *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
+*/
 esp_err_t checkConfigCRC(wl_config_t *cfg);
 
+/**
+ * @brief Print (to STDOUT) WL status contained in given instance as a JSON.
+ *
+ * @param wl Wlmon_Flash instance with reconstructed WL status
+*/
 void print_wl_status_json(WLmon_Flash *wl);
 
 #endif

@@ -1,6 +1,6 @@
 #include "wlmon.h"
 
-const esp_partition_t *get_wl_partition(const char *arg)
+const esp_partition_t *get_wl_partition(void *arg)
 {
     ESP_LOGD(TAG, "linux get_wl_partition(%s)", arg);
     // TODO get the partition dump file, copy to allocated memory (?)

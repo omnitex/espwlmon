@@ -4,7 +4,7 @@
 
 static const char *TAG = "wlmon";
 
-const esp_partition_t *get_wl_partition(const char *arg)
+const esp_partition_t *get_wl_partition(void *arg)
 {
     wl_config_t test_cfg = {};
     esp_err_t result = ESP_OK;
@@ -56,7 +56,7 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 
     result = checkConfigCRC(cfg);
     if (result != ESP_OK) {
-        return result;
+        return ESP_ERR_INVALID_CRC;
     }
 
     return ESP_OK;

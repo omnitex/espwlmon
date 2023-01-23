@@ -54,7 +54,7 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 
     result = checkStateCRC(&this->state);
     if (result != ESP_OK) {
-        return result;
+        return ESP_ERR_INVALID_CRC;
     }
 
     ESP_LOGD(TAG, "%s - config ID=%i, stored ID=%i, access_count=%i, block_size=%i, max_count=%i, pos=%i, move_count=0x%8.8X",
