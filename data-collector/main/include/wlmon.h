@@ -48,7 +48,20 @@ public :
     WLmon_Flash();
     ~WLmon_Flash();
 
+    /**
+     * @brief Reconstruct WL status (values of counters, addresses etc.) from given config and from flash, saving it to instance.
+     *
+     * @param cfg Config previously obtained primarily from get_wl_config(), gets copied to instance
+     * @param flash_drv Instance of Flash_Access needed for read function
+     *
+     * @return
+     *       - ESP_OK, if WL status was reconstructed successfuly
+     *       - ESP_ERR_INVALID_CRC, if CRC of wl_state_t that is read does not match its stored CRC
+     *       - ESP_ERR_NO_MEM, if memory allocation for temp_buff fails
+    */
+    //TODO virtual or not?
     virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
+
     esp_err_t recoverPos();
 
     void fillOkBuff(int n);
