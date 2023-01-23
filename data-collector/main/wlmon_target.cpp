@@ -21,13 +21,13 @@ const esp_partition_t *get_wl_partition(const char *arg)
         candidate = esp_partition_get(iterator);
 
         if (candidate != NULL) {
-            ESP_LOGI(TAG, "partition candidate: '%s' of size 0x%x", candidate->label, candidate->size);
+            ESP_LOGD(TAG, "WL partition candidate: '%s' at address 0x%x of size 0x%x", candidate->label, candidate->address, candidate->size);
 
             // getting config checks the CRC, which is valid only in WL partition, otherwise it's random data
             result = get_wl_config(&test_cfg, candidate);
             if (result == ESP_OK) {
                 partition = candidate;
-                ESP_LOGI(TAG, "partition '%s' @ 0x%x of size 0x%x has correct cfg CRC", partition->label, partition->address, partition->size);
+                ESP_LOGV(TAG, "partition '%s' at address 0x%x of size 0x%x has correct WL config CRC", partition->label, partition->address, partition->size);
                 break;
             }
         }
@@ -47,12 +47,6 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
         ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
         return ESP_ERR_FLASH_PROTECTED;
     }
-
-    ESP_LOGI(TAG, "%s: for partition @0x%x of size %u (0x%x)",
-            __func__,
-            partition->address,
-            partition->size,
-            partition->size);
 
     size_t cfg_address = partition->size - SPI_FLASH_SEC_SIZE; // fixed position of config struct; last sector of partition
 
