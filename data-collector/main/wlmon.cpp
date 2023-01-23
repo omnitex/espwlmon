@@ -60,6 +60,24 @@ void print_wl_status_json(WLmon_Flash *wl)
     fflush(stdout);
 }
 
+esp_err_t checkStateCRC(wl_state_t *state)
+{
+    if ( state->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)state, offsetof(wl_state_t, crc)) ) {
+        return ESP_OK;
+    } else {
+        return ESP_ERR_INVALID_CRC;
+    }
+}
+
+esp_err_t checkConfigCRC(wl_config_t *cfg)
+{
+    if ( cfg->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)cfg, offsetof(wl_config_t, crc)) ) {
+        return ESP_OK;
+    } else {
+        return ESP_ERR_INVALID_CRC;
+    }
+}
+
 WLmon_Flash *wl_attach(const esp_partition_t *partition)
 {
     void *wlmon_flash_ptr = NULL;

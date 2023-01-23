@@ -43,6 +43,8 @@ const esp_partition_t *get_wl_partition(const char *arg)
 
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 {
+    esp_err_t result = ESP_OK;
+
     if (partition->encrypted) {
         ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
         return ESP_ERR_FLASH_PROTECTED;
@@ -52,8 +54,9 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 
     esp_partition_read(partition, cfg_address, cfg, sizeof(wl_config_t));
 
-    if (cfg->crc != crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)cfg, offsetof(wl_config_t, crc))) {
-        return ESP_ERR_INVALID_CRC;
+    result = checkConfigCRC(cfg);
+    if (result != ESP_OK) {
+        return result;
     }
 
     return ESP_OK;
