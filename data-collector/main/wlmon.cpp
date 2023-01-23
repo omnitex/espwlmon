@@ -10,7 +10,7 @@
 
 static const char *TAG = "wlmon";
 
-void print_config_json(WLmon_Flash *wl)
+static void print_config_json(WLmon_Flash *wl)
 {
     printf("{");
     printf("\"start_addr\":\"0x%x\",", wl->cfg.start_addr);
@@ -26,7 +26,7 @@ void print_config_json(WLmon_Flash *wl)
     fflush(stdout);
 }
 
-void print_state_json(WLmon_Flash *wl)
+static void print_state_json(WLmon_Flash *wl)
 {
     printf("{");
     printf("\"pos\":\"0x%x\",", wl->state.pos);
@@ -39,6 +39,23 @@ void print_state_json(WLmon_Flash *wl)
     printf("\"max_count\":\"0x%x\",", wl->state.max_count);
     printf("\"device_id\":\"0x%x\",", wl->state.device_id);
     printf("\"crc\":\"0x%x\"", wl->state.crc);
+    printf("}");
+    fflush(stdout);
+}
+
+void print_wl_status_json(WLmon_Flash *wl)
+{
+    printf("{");
+    printf("\"config\":");
+
+    print_config_json(wl);
+
+    printf(",\"state\":");
+
+    print_state_json(wl);
+
+    printf(",\"dummy_addr\":\"0x%x\"", wl->dummy_addr);
+
     printf("}");
     fflush(stdout);
 }

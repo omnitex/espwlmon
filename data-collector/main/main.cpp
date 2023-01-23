@@ -28,8 +28,7 @@ void app_main(void)
 
     wl_instance = wl_attach(partition);
     if (wl_instance != NULL) {
-        print_config_json(wl_instance);
-        print_state_json(wl_instance);
+        print_wl_status_json(wl_instance);
     } else {
         ESP_LOGE(TAG, "Failed to attach to WL in '%s' partition", partition->label);
     }

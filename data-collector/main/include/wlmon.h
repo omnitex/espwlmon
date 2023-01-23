@@ -75,8 +75,6 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *part);
 
 WLmon_Flash *wl_attach(const esp_partition_t *partition);
 
-void print_config_json(WLmon_Flash *wl);
-
-void print_state_json(WLmon_Flash *wl);
+void print_wl_status_json(WLmon_Flash *wl);
 
 #endif
