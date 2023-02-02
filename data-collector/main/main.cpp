@@ -1,6 +1,12 @@
 #include "esp_log.h"
 #include "wlmon.h"
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#define PRINT_STATUS_DELAY_MS 2500
+#define TASK_STACK_SIZE 2048
+
 const char *TAG = "wlmon";
 
 // TODO static or not?
@@ -8,6 +14,15 @@ static WLmon_Flash *wl_instance;
 
 extern "C"
 {
+
+
+static void print_status_task(void *arg)
+{
+    for (;;) {
+        print_wl_status_json(wl_instance);
+        vTaskDelay(PRINT_STATUS_DELAY_MS / portTICK_PERIOD_MS);
+    }
+}
 
 #if CONFIG_IDF_TARGET_LINUX
 void app_main(int argc, char **argv)
@@ -27,9 +42,12 @@ void app_main(void)
         return;
     }
 
+    // handle for potential vTaskDelete() on status received ACK from PC-side
+    TaskHandle_t print_task_handle = NULL;
+
     wl_instance = wl_attach(partition);
     if (wl_instance != NULL) {
-        print_wl_status_json(wl_instance);
+        xTaskCreate(print_status_task, "print_status_task", TASK_STACK_SIZE, NULL, tskIDLE_PRIORITY, &print_task_handle);
     } else {
         ESP_LOGE(TAG, "Failed to attach to WL in '%s' partition", partition->label);
     }
