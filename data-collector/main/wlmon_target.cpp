@@ -1,56 +1,63 @@
 #include "esp_log.h"
+#include "esp32/rom/crc.h"
 #include "wlmon.h"
-#include "Partition.h"
 
-static const char *TAG = "Wlmon_target";
+static const char *TAG = "wlmon";
 
-const esp_partition_t *get_wl_partition(const char *arg)
+const esp_partition_t *get_wl_partition(void *arg)
 {
-    const esp_partition_t *partition = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA,
-        ESP_PARTITION_SUBTYPE_ANY,
-        "storage"
-    );
+    wl_config_t test_cfg = {};
+    esp_err_t result = ESP_OK;
 
-    // TODO check fatfs boot sector size vs partition size
+    const esp_partition_t *partition = NULL;
+    const esp_partition_t *candidate = NULL;
+
+    // subtype any for potential data partitions different than FAT
+    esp_partition_iterator_t iterator = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
+
+    // iterate throught all data partitions
+    while (iterator != NULL)
+    {
+        candidate = esp_partition_get(iterator);
+
+        if (candidate != NULL) {
+            ESP_LOGD(TAG, "WL partition candidate: '%s' at address 0x%x of size 0x%x", candidate->label, candidate->address, candidate->size);
+
+            // getting config checks the CRC, which is valid only in WL partition, otherwise it's random data
+            result = get_wl_config(&test_cfg, candidate);
+            if (result == ESP_OK) {
+                partition = candidate;
+                ESP_LOGV(TAG, "partition '%s' at address 0x%x of size 0x%x has correct WL config CRC", partition->label, partition->address, partition->size);
+                break;
+            }
+        }
+
+        iterator = esp_partition_next(iterator);
+    }
+
+    esp_partition_iterator_release(iterator);
+
 
     return partition;
 }
 
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 {
+    esp_err_t result = ESP_OK;
+
     if (partition->encrypted) {
-        ESP_LOGE(TAG, "%s: cannot read config from enrypted partition!", __func__);
+        ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
         return ESP_ERR_FLASH_PROTECTED;
     }
 
-    ESP_LOGI(TAG, "%s: for partition @0x%x of size %u (0x%x)",
-            __func__,
-            partition->address,
-            partition->size,
-            partition->size);
-
     size_t cfg_address = partition->size - SPI_FLASH_SEC_SIZE; // fixed position of config struct; last sector of partition
 
-#if CONFIG_IDF_TARGET_LINUX
-    memcpy(cfg, (const void *)cfg_address, sizeof(wl_config_t));
-#else
     esp_partition_read(partition, cfg_address, cfg, sizeof(wl_config_t));
-#endif
+
+    result = checkConfigCRC(cfg);
+    if (result != ESP_OK) {
+        return ESP_ERR_INVALID_CRC;
+    }
 
     return ESP_OK;
 }
-
-#if 0
-Partition::Partition(const esp_partition_t *partition)
-{
-    this->partition = partition;
-}
-
-esp_err_t Partition::read(size_t src_addr, void *dest, size_t size)
-{
-    esp_err_t result = ESP_OK;
-    result = esp_partition_read(this->partition, src_addr, dest, size);
-    return result;
-}
-#endif

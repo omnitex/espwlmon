@@ -4,6 +4,16 @@
 #include "Flash_Access.h"
 #include "esp_partition.h"
 
+#ifndef WL_CFG_CRC_CONST
+#define WL_CFG_CRC_CONST UINT32_MAX
+#endif
+
+#define WL_RESULT_CHECK(result) \
+    if (result != ESP_OK) { \
+        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
+        return (result); \
+    }
+
 /* Struct definitions taken from WL_Config.h and WL_State.h*/
 typedef struct WL_Config_s {
     size_t   start_addr;    /*!< start address in the flash*/
@@ -31,65 +41,104 @@ public:
     uint32_t crc;           /*!< CRC of structure*/
 } wl_state_t;
 
+// simplified WL_FLash class from WL_Flash.h
 class WLmon_Flash
 {
 public :
     WLmon_Flash();
     ~WLmon_Flash();
 
-    virtual esp_err_t config(wl_config_t *cfg, Flash_Access *flash_drv);
-    virtual esp_err_t init();
+    /**
+     * @brief Reconstruct WL status (values of counters, addresses etc.) from given config and from flash, saving it to instance.
+     *
+     * @param cfg Config previously obtained primarily from get_wl_config(), gets copied to instance
+     * @param flash_drv Instance of Flash_Access needed for read function
+     *
+     * @return
+     *       - ESP_OK, if WL status was reconstructed successfuly
+     *       - ESP_ERR_INVALID_CRC, if CRC of wl_state_t that is read does not match its stored CRC
+     *       - ESP_ERR_NO_MEM, if memory allocation for temp_buff fails
+    */
+    //TODO virtual or not?
+    virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
 
-    //size_t chip_size();
-    //size_t sector_size();
+    esp_err_t recoverPos();
 
-    //esp_err_t erase_sector(size_t sector);
-    //esp_err_t erase_range(size_t start_address, size_t size);
+    void fillOkBuff(int n);
+    bool OkBuffSet(int n);
 
-    //esp_err_t write(size_t dest_addr, const void *src, size_t size);
-    //esp_err_t read(size_t src_addr, void *dest, size_t size);
-
-    //esp_err_t flush();
-
-    //Flash_Access *get_drv();
-    //wl_config_t *get_cfg();
-
-    bool configured = false;
-    bool initialized = false;
     wl_state_t state;
     wl_config_t cfg;
+
     Flash_Access *flash_drv = NULL;
 
-    size_t addr_cfg;
     size_t addr_state1;
     size_t addr_state2;
-    size_t index_state1;
-    size_t index_state2;
 
-    size_t flash_size;
     uint32_t state_size;
     uint32_t cfg_size;
     uint8_t *temp_buff = NULL;
     size_t dummy_addr;
-    uint32_t pos_data[4];
-
-    esp_err_t initSections();
-    esp_err_t updateWL();
-    esp_err_t recoverPos();
-    size_t calcAddr(size_t addr);
-
-    esp_err_t updateVersion();
-    esp_err_t updateV1_V2();
-    void fillOkBuff(int n);
-    bool OkBuffSet(int n);
 };
 
-void print_config_json(const wl_config_t *cfg);
+/**
+ * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
+ *
+ * @param arg On target, unused, searching for partition in flash. TODO: On linux file containing partition image.
+ *
+ * @return Pointer to a found (or constructed) WL partition or NULL
+*/
+const esp_partition_t *get_wl_partition(void *arg);
 
-const esp_partition_t *get_wl_partition(const char *arg);
+/**
+ * @brief Obtain valid, if present, wear leveling config from given partition
+ *
+ * @param cfg Pointer to config which will be written
+ * @param partition Partition from which to obtain valid WL config
+ *
+ * @return
+ *       - ESP_OK, if config was read, is valid and written correctly;
+ *       - ESP_ERR_FLASH_PROTECTED, if partition has encrypted flag set
+ *       - ESP_ERR_INVALID_CRC, if config CRC failed to match its stored CRC
+*/
+esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition);
 
-esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *part);
-
+/**
+ * @brief Reconstructs WL status and stores it in created WLmon_Flash instance
+ *
+ * @param partition Partition to which to "attach"; from which to reconstruct WL status
+ *
+ * @return Created and filled WLmon_Flash instance or NULL
+*/
 WLmon_Flash *wl_attach(const esp_partition_t *partition);
+
+/**
+ * @brief Check that WL state CRC matches its stored CRC
+ *
+ * @param state wl_state_t of which to check CRC
+ *
+ * @return
+ *       - ESP_OK, if calculated CRC matches stored CRC
+ *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
+*/
+esp_err_t checkStateCRC(wl_state_t *state);
+
+/**
+ * @brief Check that WL config CRC matches its stored CRC
+ *
+ * @param state wl_config_t of which to check CRC
+ *
+ * @return
+ *       - ESP_OK, if calculated CRC matches stored CRC
+ *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
+*/
+esp_err_t checkConfigCRC(wl_config_t *cfg);
+
+/**
+ * @brief Print (to STDOUT) WL status contained in given instance as a JSON.
+ *
+ * @param wl Wlmon_Flash instance with reconstructed WL status
+*/
+void print_wl_status_json(WLmon_Flash *wl);
 
 #endif

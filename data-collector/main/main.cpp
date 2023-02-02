@@ -3,7 +3,7 @@
 
 const char *TAG = "wlmon";
 
-// use this for something?
+// TODO static or not?
 static WLmon_Flash *wl_instance;
 
 extern "C"
@@ -16,6 +16,7 @@ void app_main(void)
 #endif
 {
 #if CONFIG_IDF_TARGET_LINUX
+    // TODO on linux get partition from file with partition image
     const esp_partition_t *partition = get_wl_partition(argv[1]);
 #else
     const esp_partition_t *partition = get_wl_partition(NULL);
@@ -26,17 +27,12 @@ void app_main(void)
         return;
     }
 
-    WLmon_Flash *wl_flash = wl_attach(partition);
-
-    wl_config_t cfg = {};
-    get_wl_config(&cfg, partition);
-
-    print_config_json(&cfg);
-
-    ESP_LOGI(TAG, "now json from instance");
-
-    print_config_json(&wl_flash->cfg);
-
+    wl_instance = wl_attach(partition);
+    if (wl_instance != NULL) {
+        print_wl_status_json(wl_instance);
+    } else {
+        ESP_LOGE(TAG, "Failed to attach to WL in '%s' partition", partition->label);
+    }
 } // main()
 
 } // extern "C"
