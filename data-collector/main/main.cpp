@@ -16,6 +16,7 @@ void app_main(void)
 #endif
 {
 #if CONFIG_IDF_TARGET_LINUX
+    // TODO on linux get partition from file with partition image
     const esp_partition_t *partition = get_wl_partition(argv[1]);
 #else
     const esp_partition_t *partition = get_wl_partition(NULL);

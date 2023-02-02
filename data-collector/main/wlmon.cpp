@@ -102,6 +102,7 @@ WLmon_Flash *wl_attach(const esp_partition_t *partition)
     }
     wlmon_flash = new (wlmon_flash_ptr) WLmon_Flash();
 
+    // get_wl_config() verifies config CRC
     result = get_wl_config(&cfg, partition);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed getting WL config from flash");
@@ -122,5 +123,5 @@ WLmon_Flash *wl_attach(const esp_partition_t *partition)
 
 void wl_detach()
 {
-    // TODO free allocated memory
+    // TODO free allocated memory? is it needed?
 }
