@@ -5,7 +5,9 @@ __version__ = "0.1"
 import argparse
 import os
 import sys
+import json
 import serial
+
 from math import ceil
 
 import esptool
@@ -34,15 +36,6 @@ except ModuleNotFoundError as e:
     print(f"{e}", file=sys.stderr)
     sys.exit(2)
 
-
-SUPPORTED_CHIPS = {
-    "esp32",
-    "esp32s2",
-    "esp32c3",
-    "esp32s3",
-    "esp32h2"
-}
-
 # TODO randomize filenames?
 PARTITION_TABLE_OLD_BIN = "partition_table_old.bin"
 PARTITION_TABLE_NEW_BIN = "partition_table_new.bin"
@@ -53,14 +46,33 @@ PARTITION_TABLE_SIZE = "0xC00"
 DATA_COLLECTOR_BIN = "data-collector/build/data-collector.bin"
 
 def monitor(port):
-    # TODO try except
-    s = serial.Serial(port, 115200)
-    while (1):
-        print(s.readline())
+    print(f"Starting monitor on port {port}")
 
-def build(chip):
-    print(f"idf.py -C data-collector set-target {chip}")
-    print("idf.py -C data-collector app")
+    try:
+        serial_port = serial.Serial(port, baudrate=115200, timeout=30)
+    except serial.SerialException as serial_exception:
+        print(serial_exception)
+
+    json_dict = None
+
+    print("Will receive JSON, this can take few seconds...")
+    while(serial_port.is_open):
+        if json_dict is None:
+            # first JSON load
+            json_dict = json.loads(serial_port.readline().decode())
+        else:
+            # JSON already loaded, check next load produces same JSON
+            if (json_dict != json.loads(serial_port.readline().decode())):
+                # they differ, save the newly loaded
+                json_dict = json.loads(serial_port.readline().decode())
+            else:
+                # they are the same, break out of while
+                break
+
+    print("Received JSON confirmed, closing serial port")
+    serial_port.close()
+
+    print(json.dumps(json_dict, indent=4))
 
 
 def flash():
@@ -145,18 +157,6 @@ def main():
         dest="operation", help="Run espwlmon.py {command} -h for additional help"
     )
 
-    parser_build = subparsers.add_parser(
-        "build", help="Build data collector"
-    )
-    parser_build.add_argument(
-        "--chip",
-        "-c",
-        help="Target chip type",
-        type=lambda c: c.lower().replace("-", ""),
-        choices=list(SUPPORTED_CHIPS),
-        required=True
-    )
-
     parser_flash = subparsers.add_parser(
         "flash", help="Create test partition and flash built data collector to it"
     )
@@ -187,9 +187,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if args.operation == "build":
-        build(args.chip)
-    elif args.operation == "flash":
+    if args.operation == "flash":
         flash()
     elif args.operation == "monitor":
         monitor(args.port)
