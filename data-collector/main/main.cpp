@@ -5,7 +5,6 @@
 #include "freertos/task.h"
 
 #define PRINT_STATUS_DELAY_MS 2500
-#define TASK_STACK_SIZE 2048
 
 const char *TAG = "wlmon";
 
@@ -47,7 +46,7 @@ void app_main(void)
 
     wl_instance = wl_attach(partition);
     if (wl_instance != NULL) {
-        xTaskCreate(print_status_task, "print_status_task", TASK_STACK_SIZE, NULL, tskIDLE_PRIORITY, &print_task_handle);
+        xTaskCreate(print_status_task, "print_status_task", CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH, NULL, CONFIG_FREERTOS_TIMER_TASK_PRIORITY, &print_task_handle);
     } else {
         ESP_LOGE(TAG, "Failed to attach to WL in '%s' partition", partition->label);
     }
