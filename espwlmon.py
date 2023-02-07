@@ -50,31 +50,42 @@ def monitor(port):
     print(f"Starting monitor on port {port}")
 
     try:
-        serial_port = serial.Serial(port, baudrate=115200, timeout=30)
+        serial_port = serial.Serial(port, baudrate=115200, timeout=20)
     except serial.SerialException as serial_exception:
         print(serial_exception)
 
     json_dict = None
 
     print("Will receive JSON, this can take few seconds...")
+
     while(serial_port.is_open):
-        if json_dict is None:
-            # first JSON load
-            json_dict = json.loads(serial_port.readline().decode())
-        else:
-            # JSON already loaded, check next load produces same JSON
-            if (json_dict != json.loads(serial_port.readline().decode())):
-                # they differ, save the newly loaded
-                json_dict = json.loads(serial_port.readline().decode())
+        json_line = serial_port.readline().decode()
+        try:
+            if json_dict is None:
+                # first JSON load
+                json_dict = json.loads(json_line)
             else:
-                # they are the same, break out of while
-                break
+                # JSON already loaded, check next load produces same JSON
+                if (json_dict != json.loads(json_line)):
+                    # they differ, save the newly loaded
+                    json_dict = json.loads(json_line)
+                else:
+                    # they are the same, break out of while
+                    break
+
+        except json.JSONDecodeError as json_decode_error:
+            print(f"Error parsing received JSON: {json_decode_error.msg}")
+            context_characters = 15
+            # print the context of error with characters around and arrow on next line pointing to the exact position
+            print(f"{json_line[json_decode_error.pos-context_characters:json_decode_error.pos+context_characters]}")
+            print(' ' * context_characters, '^', ' ' * context_characters, sep='')
+            serial_port.close()
+            return
 
     print("Received JSON confirmed, closing serial port")
     serial_port.close()
 
     print(json.dumps(json_dict, indent=4))
-
 
 def flash():
     if not os.path.isfile(DATA_COLLECTOR_BIN):
