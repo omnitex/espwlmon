@@ -1,14 +1,13 @@
 #! /usr/bin/env python
 
-__version__ = "0.1"
+__version__ = "0.2"
 
 import argparse
 import os
 import sys
 import json
-import serial
-
 from math import ceil
+import serial
 
 import esptool
 from esptool.util import (
@@ -25,21 +24,23 @@ try:
     from gen_esp32part import ( # type: ignore
         InputError
     )
-except ModuleNotFoundError as e:
+except ModuleNotFoundError:
     print("Cannot find gen_esp32part module", file=sys.stderr)
     sys.exit(2)
+
 idftool_dir = os.path.join(idf_path, "tools")
 sys.path.append(idftool_dir)
+#TODO what is this supposed to be?
 try:
     import idf # type: ignore
-except ModuleNotFoundError as e:
-    print(f"{e}", file=sys.stderr)
+except ModuleNotFoundError:
+    print("Cannot find idf module", file=sys.stderr)
     sys.exit(2)
 
-# TODO randomize filenames?
+#TODO randomize filenames?
 PARTITION_TABLE_OLD_BIN = "partition_table_old.bin"
 PARTITION_TABLE_NEW_BIN = "partition_table_new.bin"
-# TODO part table does not have to be at 0x8000
+#TODO part table does not have to be at 0x8000
 PARTITION_TABLE_ADDRESS = "0x8000"
 PARTITION_TABLE_SIZE = "0xC00"
 
@@ -87,12 +88,12 @@ def flash():
     args_read_partition_table = argv + ["read_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_SIZE, PARTITION_TABLE_OLD_BIN]
     try:
         esptool.main(args_read_partition_table)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
-    with open(PARTITION_TABLE_OLD_BIN, "rb") as f:
-        table, _ = gen_esp32part.PartitionTable.from_file(f)
+    with open(PARTITION_TABLE_OLD_BIN, "rb") as partition_table_file:
+        table, _ = gen_esp32part.PartitionTable.from_file(partition_table_file)
     
     if table.find_by_name("test") is not None:
         print("Test app partition already exists, aborting...")
@@ -112,13 +113,13 @@ def flash():
     # append new line specifying test partition
     table.append(gen_esp32part.PartitionDefinition.from_csv(test_partition_csv, len(table)))
 
-    # TODO check table.flash_size() after adding test is still <= overall flash size (get that from somewhere)
+    #TODO check table.flash_size() after adding test is still <= overall flash size (get that from somewhere)
 
     print("Verifying altered partition table before writing it")
     try:
         table.verify()
-    except InputError as e:
-        print("Failed adding test app partition!")
+    except InputError as input_error:
+        print(f"Failed adding test app partition! {input_error}")
         cleanup(2)
 
     with open(PARTITION_TABLE_NEW_BIN, "wb") as f:
@@ -128,16 +129,16 @@ def flash():
     args_write_partition_table = argv + ["write_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_NEW_BIN]
     try:
         esptool.main(args_write_partition_table)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
     print("Flashing data collector to test partition")
     args_flash_data_collector = argv + ["write_flash", f"{test_partition_offset}", DATA_COLLECTOR_BIN]
     try:
         esptool.main(args_flash_data_collector)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
     print("\nSuccessfully flashed data collector")
@@ -148,8 +149,7 @@ def main():
     Main function for espwlmon
     """
     parser = argparse.ArgumentParser(
-        description="espwlmon.py v%s - Flash Wear Leveling Monitoring Utility for devices with Espressif chips"
-        % __version__,
+        description=f"espwlmon.py v{__version__} - Flash Wear Leveling Monitoring Utility for devices with Espressif chips",
         prog="espwlmon",
     )
 
@@ -181,7 +181,7 @@ def main():
 
     # just for checking args format, we do not need them parsed
     args = parser.parse_args(argv)
-    print("espwlmon.py v%s" % __version__)
+    print(f"espwlmon.py v{__version__}")
 
     if args.operation is None:
         parser.print_help()
@@ -203,8 +203,8 @@ def cleanup(exit_code):
 def _main():
     try:
         main()
-    except FatalError as e:
-        print("\nA fatal error occurred: %s" % e)
+    except FatalError as fatal_error:
+        print(f"\nA fatal error occurred: {fatal_error}")
         sys.exit(2)
     finally:
         cleanup(0)
