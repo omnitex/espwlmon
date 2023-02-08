@@ -169,7 +169,9 @@ def main():
     )
 
     parser_flash = subparsers.add_parser(
-        "flash", help="Create test partition and flash built data collector to it"
+        "flash", help="Flashes data-collector to newly created test app partition.\
+            Requires adequate free space in flash after last existing partition.\
+            Meant for 'Boot from Test Firmware', see api-guides docs for more info"
     )
     parser_flash.add_argument(
         "--port",
