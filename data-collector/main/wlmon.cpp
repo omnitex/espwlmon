@@ -56,7 +56,7 @@ void print_wl_status_json(WLmon_Flash *wl)
 
     printf(",\"dummy_addr\":\"0x%x\"", wl->dummy_addr);
 
-    printf("}");
+    printf("}\n");
     fflush(stdout);
 }
 

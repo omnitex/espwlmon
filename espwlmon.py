@@ -1,12 +1,13 @@
 #! /usr/bin/env python
 
-__version__ = "0.1"
+__version__ = "0.2"
 
 import argparse
 import os
 import sys
-import serial
+import json
 from math import ceil
+import serial
 
 import esptool
 from esptool.util import (
@@ -23,45 +24,68 @@ try:
     from gen_esp32part import ( # type: ignore
         InputError
     )
-except ModuleNotFoundError as e:
+except ModuleNotFoundError:
     print("Cannot find gen_esp32part module", file=sys.stderr)
     sys.exit(2)
+
 idftool_dir = os.path.join(idf_path, "tools")
 sys.path.append(idftool_dir)
+#TODO what is this supposed to be?
 try:
     import idf # type: ignore
-except ModuleNotFoundError as e:
-    print(f"{e}", file=sys.stderr)
+except ModuleNotFoundError:
+    print("Cannot find idf module", file=sys.stderr)
     sys.exit(2)
 
-
-SUPPORTED_CHIPS = {
-    "esp32",
-    "esp32s2",
-    "esp32c3",
-    "esp32s3",
-    "esp32h2"
-}
-
-# TODO randomize filenames?
+#TODO randomize filenames?
 PARTITION_TABLE_OLD_BIN = "partition_table_old.bin"
 PARTITION_TABLE_NEW_BIN = "partition_table_new.bin"
-# TODO part table does not have to be at 0x8000
+#TODO part table does not have to be at 0x8000
 PARTITION_TABLE_ADDRESS = "0x8000"
 PARTITION_TABLE_SIZE = "0xC00"
 
 DATA_COLLECTOR_BIN = "data-collector/build/data-collector.bin"
 
 def monitor(port):
-    # TODO try except
-    s = serial.Serial(port, 115200)
-    while (1):
-        print(s.readline())
+    print(f"Starting monitor on port {port}")
 
-def build(chip):
-    print(f"idf.py -C data-collector set-target {chip}")
-    print("idf.py -C data-collector app")
+    try:
+        serial_port = serial.Serial(port, baudrate=115200, timeout=20)
+    except serial.SerialException as serial_exception:
+        print(serial_exception)
 
+    json_dict = None
+
+    print("Will receive JSON, this can take few seconds...")
+
+    while(serial_port.is_open):
+        json_line = serial_port.readline().decode()
+        try:
+            if json_dict is None:
+                # first JSON load
+                json_dict = json.loads(json_line)
+            else:
+                # JSON already loaded, check next load produces same JSON
+                if (json_dict != json.loads(json_line)):
+                    # they differ, save the newly loaded
+                    json_dict = json.loads(json_line)
+                else:
+                    # they are the same, break out of while
+                    break
+
+        except json.JSONDecodeError as json_decode_error:
+            print(f"Error parsing received JSON: {json_decode_error.msg}")
+            context_characters = 15
+            # print the context of error with characters around and arrow on next line pointing to the exact position
+            print(f"{json_line[json_decode_error.pos-context_characters:json_decode_error.pos+context_characters]}")
+            print(' ' * context_characters, '^', ' ' * context_characters, sep='')
+            serial_port.close()
+            return
+
+    print("Received JSON confirmed, closing serial port")
+    serial_port.close()
+
+    print(json.dumps(json_dict, indent=4))
 
 def flash():
     if not os.path.isfile(DATA_COLLECTOR_BIN):
@@ -75,12 +99,12 @@ def flash():
     args_read_partition_table = argv + ["read_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_SIZE, PARTITION_TABLE_OLD_BIN]
     try:
         esptool.main(args_read_partition_table)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
-    with open(PARTITION_TABLE_OLD_BIN, "rb") as f:
-        table, _ = gen_esp32part.PartitionTable.from_file(f)
+    with open(PARTITION_TABLE_OLD_BIN, "rb") as partition_table_file:
+        table, _ = gen_esp32part.PartitionTable.from_file(partition_table_file)
     
     if table.find_by_name("test") is not None:
         print("Test app partition already exists, aborting...")
@@ -100,13 +124,13 @@ def flash():
     # append new line specifying test partition
     table.append(gen_esp32part.PartitionDefinition.from_csv(test_partition_csv, len(table)))
 
-    # TODO check table.flash_size() after adding test is still <= overall flash size (get that from somewhere)
+    #TODO check table.flash_size() after adding test is still <= overall flash size (get that from somewhere)
 
     print("Verifying altered partition table before writing it")
     try:
         table.verify()
-    except InputError as e:
-        print("Failed adding test app partition!")
+    except InputError as input_error:
+        print(f"Failed adding test app partition! {input_error}")
         cleanup(2)
 
     with open(PARTITION_TABLE_NEW_BIN, "wb") as f:
@@ -116,16 +140,16 @@ def flash():
     args_write_partition_table = argv + ["write_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_NEW_BIN]
     try:
         esptool.main(args_write_partition_table)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
     print("Flashing data collector to test partition")
     args_flash_data_collector = argv + ["write_flash", f"{test_partition_offset}", DATA_COLLECTOR_BIN]
     try:
         esptool.main(args_flash_data_collector)
-    except FatalError as e:
-        print(f"{e}")
+    except FatalError as fatal_error:
+        print(f"{fatal_error}")
         cleanup(2)
 
     print("\nSuccessfully flashed data collector")
@@ -136,8 +160,7 @@ def main():
     Main function for espwlmon
     """
     parser = argparse.ArgumentParser(
-        description="espwlmon.py v%s - Flash Wear Leveling Monitoring Utility for devices with Espressif chips"
-        % __version__,
+        description=f"espwlmon.py v{__version__} - Flash Wear Leveling Monitoring Utility for devices with Espressif chips",
         prog="espwlmon",
     )
 
@@ -145,20 +168,10 @@ def main():
         dest="operation", help="Run espwlmon.py {command} -h for additional help"
     )
 
-    parser_build = subparsers.add_parser(
-        "build", help="Build data collector"
-    )
-    parser_build.add_argument(
-        "--chip",
-        "-c",
-        help="Target chip type",
-        type=lambda c: c.lower().replace("-", ""),
-        choices=list(SUPPORTED_CHIPS),
-        required=True
-    )
-
     parser_flash = subparsers.add_parser(
-        "flash", help="Create test partition and flash built data collector to it"
+        "flash", help="Flashes data-collector to newly created test app partition.\
+            Requires adequate free space in flash after last existing partition.\
+            Meant for 'Boot from Test Firmware', see api-guides docs for more info"
     )
     parser_flash.add_argument(
         "--port",
@@ -181,15 +194,13 @@ def main():
 
     # just for checking args format, we do not need them parsed
     args = parser.parse_args(argv)
-    print("espwlmon.py v%s" % __version__)
+    print(f"espwlmon.py v{__version__}")
 
     if args.operation is None:
         parser.print_help()
         sys.exit(1)
 
-    if args.operation == "build":
-        build(args.chip)
-    elif args.operation == "flash":
+    if args.operation == "flash":
         flash()
     elif args.operation == "monitor":
         monitor(args.port)
@@ -205,8 +216,8 @@ def cleanup(exit_code):
 def _main():
     try:
         main()
-    except FatalError as e:
-        print("\nA fatal error occurred: %s" % e)
+    except FatalError as fatal_error:
+        print(f"\nA fatal error occurred: {fatal_error}")
         sys.exit(2)
     finally:
         cleanup(0)
