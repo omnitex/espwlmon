@@ -14,29 +14,6 @@ from esptool.util import (
     FatalError
 )
 
-# Source: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html
-#TODO make this into some function?
-idf_path = os.environ["IDF_PATH"]
-parttool_dir = os.path.join(idf_path, "components", "partition_table")
-sys.path.append(parttool_dir)
-try:
-    import gen_esp32part # type: ignore
-    from gen_esp32part import ( # type: ignore
-        InputError
-    )
-except ModuleNotFoundError:
-    print("Cannot find gen_esp32part module", file=sys.stderr)
-    sys.exit(2)
-
-idftool_dir = os.path.join(idf_path, "tools")
-sys.path.append(idftool_dir)
-#TODO what is this supposed to be?
-try:
-    import idf # type: ignore
-except ModuleNotFoundError:
-    print("Cannot find idf module", file=sys.stderr)
-    sys.exit(2)
-
 #TODO randomize filenames?
 PARTITION_TABLE_OLD_BIN = "partition_table_old.bin"
 PARTITION_TABLE_NEW_BIN = "partition_table_new.bin"
@@ -45,6 +22,7 @@ PARTITION_TABLE_ADDRESS = "0x8000"
 PARTITION_TABLE_SIZE = "0xC00"
 
 DATA_COLLECTOR_BIN = "data-collector/build/data-collector.bin"
+
 
 def monitor(port):
     print(f"Starting monitor on port {port}")
@@ -155,10 +133,42 @@ def flash():
     print("\nSuccessfully flashed data collector")
     cleanup(0)
 
+def idf_setup():
+    # Source: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html
+    try:
+        idf_path = os.environ["IDF_PATH"]
+    except KeyError as key_error:
+        print(f"Please set up ESP-IDF environmental variables (with ESP-IDF provided export script) before using espwlmon.")
+        sys.exit(2)
+    parttool_dir = os.path.join(idf_path, "components", "partition_table")
+    sys.path.append(parttool_dir)
+    try:
+        import gen_esp32part # type: ignore
+        from gen_esp32part import ( # type: ignore
+            InputError
+        )
+    except ModuleNotFoundError:
+        print("Cannot find gen_esp32part module", file=sys.stderr)
+        sys.exit(2)
+
+    idftool_dir = os.path.join(idf_path, "tools")
+    sys.path.append(idftool_dir)
+    #TODO what is this supposed to be?
+    try:
+        import idf # type: ignore
+    except ModuleNotFoundError:
+        print("Cannot find idf module", file=sys.stderr)
+        sys.exit(2)
+
+
 def main():
     """
     Main function for espwlmon
     """
+
+    # firstly setup needed ESP-IDF imports
+    idf_setup()
+
     parser = argparse.ArgumentParser(
         description=f"espwlmon.py v{__version__} - Flash Wear Leveling Monitoring Utility for devices with Espressif chips",
         prog="espwlmon",
@@ -199,6 +209,7 @@ def main():
     if args.operation is None:
         parser.print_help()
         sys.exit(1)
+
 
     if args.operation == "flash":
         flash()
