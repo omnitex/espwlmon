@@ -79,10 +79,16 @@ public :
  * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
  *
  * @param arg On target, unused, searching for partition in flash. TODO: On linux file containing partition image.
+ * @param[out] partition Pointer for passing found (or constructed) WL partition
  *
- * @return Pointer to a found (or constructed) WL partition or NULL
+ * @return
+ *       - ESP_OK, if WL partition is found and config is retrieved, including CRC check
+ *       - ESP_ERR_NOT_FOUND, if no candidate for WL partition was found
+ *       - ESP_ERR_FLASH_PROTECTED, if last processed candidate paritition was encrypted
+ *       - ESP_ERR_INVALID_CRC, if last processed candidate partition failed config CRC check
+ *       - ESP_ERR_NOT_FOUND, if no candidate partition is found
 */
-const esp_partition_t *get_wl_partition(void *arg);
+esp_err_t get_wl_partition(void *arg, const esp_partition_t **partition);
 
 /**
  * @brief Obtain valid, if present, wear leveling config from given partition
@@ -142,7 +148,7 @@ esp_err_t checkConfigCRC(wl_config_t *cfg);
 void print_wl_status_json(WLmon_Flash *wl);
 
 /**
- * @brief Print (to STDOUT) JSON formatted message concerning error in attaching to WL
+ * @brief Print (to STDOUT) JSON formatted message concerning error in getting WL partition or attaching to WL
  *
  * @param result esp_err_t code of error
 */

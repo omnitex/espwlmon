@@ -63,9 +63,16 @@ void print_wl_status_json(WLmon_Flash *wl)
 void print_error_json(esp_err_t result)
 {
     printf("{");
+
     printf("\"error\":");
-    printf("\"%s - TODO\"", esp_err_to_name(result));
-    printf("}");
+    printf("\"%s\"", esp_err_to_name(result));
+
+    // TODO add verbose message here? simple error name from above could be interpreted at FE
+    // but the semantics could change and it would need to be updated across BE/FE
+    // or print verbose message here and the potential changes that would need to be addressed stay within data-collector
+
+    printf("}\n");
+    fflush(stdout);
 }
 
 esp_err_t checkStateCRC(wl_state_t *state)

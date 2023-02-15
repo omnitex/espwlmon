@@ -4,12 +4,12 @@
 
 static const char *TAG = "wlmon";
 
-const esp_partition_t *get_wl_partition(void *arg)
+esp_err_t get_wl_partition(void *arg, const esp_partition_t **partition)
 {
     wl_config_t test_cfg = {};
-    esp_err_t result = ESP_OK;
+    // default to not found; any candidate partition overwrites this by get_wl_config()
+    esp_err_t result = ESP_ERR_NOT_FOUND;
 
-    const esp_partition_t *partition = NULL;
     const esp_partition_t *candidate = NULL;
 
     // subtype any for potential data partitions different than FAT
@@ -26,8 +26,8 @@ const esp_partition_t *get_wl_partition(void *arg)
             // getting config checks the CRC, which is valid only in WL partition, otherwise it's random data
             result = get_wl_config(&test_cfg, candidate);
             if (result == ESP_OK) {
-                partition = candidate;
-                ESP_LOGV(TAG, "partition '%s' at address 0x%x of size 0x%x has correct WL config CRC", partition->label, partition->address, partition->size);
+                *partition = candidate;
+                ESP_LOGV(TAG, "partition '%s' at address 0x%x of size 0x%x has correct WL config CRC", (*partition)->label, (*partition)->address, (*partition)->size);
                 break;
             }
         }
@@ -37,8 +37,7 @@ const esp_partition_t *get_wl_partition(void *arg)
 
     esp_partition_iterator_release(iterator);
 
-
-    return partition;
+    return result;
 }
 
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
