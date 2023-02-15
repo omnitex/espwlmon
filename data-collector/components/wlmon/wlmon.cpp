@@ -2,8 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
-#include "spi_flash_mmap.h" // for SPI_FLASH_SEC_SIZE
 #include "esp32/rom/crc.h"
+
+#if !CONFIG_IDF_TARGET_LINUX
+#include "spi_flash_mmap.h" // for SPI_FLASH_SEC_SIZE
+#endif
 
 #include "Partition.h"
 #include "wlmon.h"

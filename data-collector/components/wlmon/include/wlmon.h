@@ -1,7 +1,7 @@
 #ifndef _WLMON_H_
 #define _WLMON_H_
 
-//#include "Flash_Access.h"
+#include "Flash_Access.h"
 #include "esp_partition.h"
 
 #ifndef WL_CFG_CRC_CONST
@@ -34,27 +34,6 @@ public:
     uint32_t reserved[7];   /*!< Reserved space for future use*/
     uint32_t crc;           /*!< CRC of structure*/
 } wl_state_t;
-
-class Flash_Access
-{
-public:
-    virtual size_t chip_size() = 0;
-
-    virtual esp_err_t erase_sector(size_t sector) = 0;
-    virtual esp_err_t erase_range(size_t start_address, size_t size) = 0;
-
-    virtual esp_err_t write(size_t dest_addr, const void *src, size_t size) = 0;
-    virtual esp_err_t read(size_t src_addr, void *dest, size_t size) = 0;
-
-    virtual size_t sector_size() = 0;
-
-    virtual esp_err_t flush()
-    {
-        return ESP_OK;
-    };
-
-    virtual ~Flash_Access() {};
-};
 
 // simplified WL_FLash class from WL_Flash.h
 class WLmon_Flash

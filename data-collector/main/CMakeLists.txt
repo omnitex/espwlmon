@@ -1,1 +1,1 @@
-idf_component_register(SRCS "main.cpp" REQUIRES wlmon)
+idf_component_register(SRCS "main.cpp" REQUIRES wlmon PRIV_INCLUDE_DIRS "../components/wlmon/private_include")
