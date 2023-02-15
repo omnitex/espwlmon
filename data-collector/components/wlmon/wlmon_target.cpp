@@ -1,5 +1,6 @@
 #include "esp_log.h"
-#include "esp32/rom/crc.h"
+#include "hal/esp_flash_err.h"
+#include "spi_flash_mmap.h"
 #include "wlmon.h"
 
 static const char *TAG = "wlmon";
