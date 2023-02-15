@@ -2,7 +2,7 @@ set(srcs wlmon.cpp WLmon_Flash.cpp)
 set(include_dirs "include")
 set(priv_include_dirs "private_include")
 set(reqs esp_partition)
-set(priv_reqs)
+set(priv_reqs wear_levelling)
 #set(priv_reqs spi_flash wear_levelling)
 
 idf_build_get_property(target IDF_TARGET)
