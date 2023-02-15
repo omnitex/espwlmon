@@ -8,12 +8,6 @@
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif
 
-#define WL_RESULT_CHECK(result) \
-    if (result != ESP_OK) { \
-        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
-        return (result); \
-    }
-
 /* Struct definitions taken from WL_Config.h and WL_State.h*/
 typedef struct WL_Config_s {
     size_t   start_addr;    /*!< start address in the flash*/
@@ -107,10 +101,16 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition);
  * @brief Reconstructs WL status and stores it in created WLmon_Flash instance
  *
  * @param partition Partition to which to "attach"; from which to reconstruct WL status
+ * @param[out] wlmon_instance Pointer for passing the created and filled Wlmon_Flash instance
  *
- * @return Created and filled WLmon_Flash instance or NULL
+ * @return
+ *       - ESP_OK, if attaching was successful and wlmon_instance points to created instance
+ *       - ESP_ERR_NO_MEM, if memory allocation for instances or temp buffer failed
+ *       - ESP_ERR_FLASH_PROTECTED, if attempting to reconstruct from encrypted partition
+ *       - ESP_ERR_INVALID_CRC, if CRC check of either WL config or state failed
+ *       - ESP_ERR_FLASH_OP_FAIL, if reading from flash when reconstructing status fails
 */
-WLmon_Flash *wl_attach(const esp_partition_t *partition);
+esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instance);
 
 /**
  * @brief Check that WL state CRC matches its stored CRC
@@ -140,5 +140,12 @@ esp_err_t checkConfigCRC(wl_config_t *cfg);
  * @param wl Wlmon_Flash instance with reconstructed WL status
 */
 void print_wl_status_json(WLmon_Flash *wl);
+
+/**
+ * @brief Print (to STDOUT) JSON formatted message concerning error in attaching to WL
+ *
+ * @param result esp_err_t code of error
+*/
+void print_error_json(esp_err_t result);
 
 #endif
