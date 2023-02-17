@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp32/rom/crc.h"
+#include "spi_flash_mmap.h"
 #include "wlmon.h"
 
 #define WL_RESULT_CHECK(result) \
