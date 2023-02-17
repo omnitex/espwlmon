@@ -103,7 +103,6 @@ void wl_detach(Partition *part, WLmon_Flash *wlmon_flash)
         free(part);
     }
     if (wlmon_flash) {
-        free(wlmon_flash->temp_buff);
         wlmon_flash->~WLmon_Flash();
         free(wlmon_flash);
     }
