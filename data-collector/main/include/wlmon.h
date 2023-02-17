@@ -52,6 +52,7 @@ public :
      *       - ESP_OK, if WL status was reconstructed successfuly
      *       - ESP_ERR_INVALID_CRC, if CRC of wl_state_t that is read does not match its stored CRC
      *       - ESP_ERR_NO_MEM, if memory allocation for temp_buff fails
+     *       - ESP_ERR_FLASH_OP_FAIL, if recovering pos from flash fails
     */
     //TODO virtual or not?
     virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
