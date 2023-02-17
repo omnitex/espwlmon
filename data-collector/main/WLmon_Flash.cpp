@@ -4,6 +4,12 @@
 #include "esp32/rom/crc.h"
 #include "wlmon.h"
 
+#define WL_RESULT_CHECK(result) \
+    if (result != ESP_OK) { \
+        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
+        return (result); \
+    }
+
 static const char *TAG = "wlmon";
 
 WLmon_Flash::WLmon_Flash()
@@ -74,8 +80,12 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     WL_RESULT_CHECK(result);
 
     result = this->recoverPos();
+    if (result != ESP_OK) {
+        // non OK code returned by flash_drv->read(), don't know which one, override with own code
+        return ESP_ERR_FLASH_OP_FAIL;
+    }
 
-    return result;
+    return ESP_OK;
 }
 
 // recoverPos(), fillOkBuff() and OkBuffSet() taken from WL_Flash.cpp
