@@ -4,7 +4,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#define PRINT_STATUS_DELAY_MS 2500
+#define PRINT_TASK_DELAY_MS 2500
 
 const char *TAG = "wlmon";
 
