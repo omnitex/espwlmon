@@ -1,6 +1,5 @@
 set(srcs "wlmon.cpp" "WLmon_Flash.cpp" "main.cpp")
 set(include_dirs "include")
-set(priv_include_dirs "private_include")
 
 idf_build_get_property(target IDF_TARGET)
 idf_component_get_property(wl_dir wear_levelling COMPONENT_DIR)

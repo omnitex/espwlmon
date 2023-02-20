@@ -13,15 +13,9 @@
 
 static const char *TAG = "wlmon";
 
-WLmon_Flash::WLmon_Flash()
-{
+WLmon_Flash::WLmon_Flash() {}
 
-}
-
-WLmon_Flash::~WLmon_Flash()
-{
-    free(this->temp_buff);
-}
+WLmon_Flash::~WLmon_Flash() {}
 
 esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 {
@@ -57,7 +51,9 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     this->addr_state1 = this->cfg.start_addr + this->cfg.full_mem_size - this->state_size * 2 - this->cfg_size;
     this->addr_state2 = this->cfg.start_addr + this->cfg.full_mem_size - this->state_size * 1 - this->cfg_size;
 
-    this->flash_drv->read(this->addr_state1, &this->state, sizeof(wl_state_t));
+    ESP_LOGD(TAG, "will read state from %p", this->addr_state1);
+    result = this->flash_drv->read(this->addr_state1, &this->state, sizeof(wl_state_t));
+    ESP_LOGD(TAG, "state read returned %p (%s)", result, esp_err_to_name(result));
 
     result = checkStateCRC(&this->state);
     if (result != ESP_OK) {
@@ -87,4 +83,55 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     }
 
     return ESP_OK;
+}
+
+void WLmon_Flash::print_wl_config_json()
+{
+    printf("{");
+    printf("\"start_addr\":\"0x%x\",", this->cfg.start_addr);
+    printf("\"full_mem_size\":\"0x%x\",", this->cfg.full_mem_size);
+    printf("\"page_size\":\"0x%x\",", this->cfg.page_size);
+    printf("\"sector_size\":\"0x%x\",", this->cfg.sector_size);
+    printf("\"updaterate\":\"0x%x\",", this->cfg.updaterate);
+    printf("\"wr_size\":\"0x%x\",", this->cfg.wr_size);
+    printf("\"version\":\"0x%x\",", this->cfg.version);
+    printf("\"temp_buff_size\":\"0x%x\",", this->cfg.temp_buff_size);
+    printf("\"crc\":\"0x%x\"", this->cfg.crc);
+    printf("}");
+    fflush(stdout);
+}
+
+void WLmon_Flash::print_wl_state_json()
+{
+    printf("{");
+    printf("\"pos\":\"0x%x\",", this->state.pos);
+    printf("\"max_pos\":\"0x%x\",", this->state.max_pos);
+    printf("\"move_count\":\"0x%x\",", this->state.move_count);
+    printf("\"access_count\":\"0x%x\",", this->state.access_count);
+    printf("\"max_count\":\"0x%x\",", this->state.max_count);
+    printf("\"block_size\":\"0x%x\",", this->state.block_size);
+    printf("\"version\":\"0x%x\",", this->state.version);
+    printf("\"max_count\":\"0x%x\",", this->state.max_count);
+    printf("\"device_id\":\"0x%x\",", this->state.device_id);
+    printf("\"crc\":\"0x%x\"", this->state.crc);
+    printf("}");
+    fflush(stdout);
+}
+
+void WLmon_Flash::print_wl_status_json()
+{
+    printf("{");
+    printf("\"config\":");
+
+    print_wl_config_json();
+
+    printf(",\"state\":");
+
+    print_wl_state_json();
+
+    // TODO dummy addr in static analysis does not make much sense as it is written in updateWL()?
+    //printf(",\"dummy_addr\":\"0x%x\"", this->dummy_addr);
+
+    printf("}\n");
+    fflush(stdout);
 }

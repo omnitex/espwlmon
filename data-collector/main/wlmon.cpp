@@ -10,56 +10,6 @@
 
 static const char *TAG = "wlmon";
 
-static void print_config_json(WLmon_Flash *wl)
-{
-    printf("{");
-    printf("\"start_addr\":\"0x%x\",", wl->cfg.start_addr);
-    printf("\"full_mem_size\":\"0x%x\",", wl->cfg.full_mem_size);
-    printf("\"page_size\":\"0x%x\",", wl->cfg.page_size);
-    printf("\"sector_size\":\"0x%x\",", wl->cfg.sector_size);
-    printf("\"updaterate\":\"0x%x\",", wl->cfg.updaterate);
-    printf("\"wr_size\":\"0x%x\",", wl->cfg.wr_size);
-    printf("\"version\":\"0x%x\",", wl->cfg.version);
-    printf("\"temp_buff_size\":\"0x%x\",", wl->cfg.temp_buff_size);
-    printf("\"crc\":\"0x%x\"", wl->cfg.crc);
-    printf("}");
-    fflush(stdout);
-}
-
-static void print_state_json(WLmon_Flash *wl)
-{
-    printf("{");
-    printf("\"pos\":\"0x%x\",", wl->state.pos);
-    printf("\"max_pos\":\"0x%x\",", wl->state.max_pos);
-    printf("\"move_count\":\"0x%x\",", wl->state.move_count);
-    printf("\"access_count\":\"0x%x\",", wl->state.access_count);
-    printf("\"max_count\":\"0x%x\",", wl->state.max_count);
-    printf("\"block_size\":\"0x%x\",", wl->state.block_size);
-    printf("\"version\":\"0x%x\",", wl->state.version);
-    printf("\"max_count\":\"0x%x\",", wl->state.max_count);
-    printf("\"device_id\":\"0x%x\",", wl->state.device_id);
-    printf("\"crc\":\"0x%x\"", wl->state.crc);
-    printf("}");
-    fflush(stdout);
-}
-
-void print_wl_status_json(WLmon_Flash *wl)
-{
-    printf("{");
-    printf("\"config\":");
-
-    print_config_json(wl);
-
-    printf(",\"state\":");
-
-    print_state_json(wl);
-
-    printf(",\"dummy_addr\":\"0x%x\"", wl->dummy_addr);
-
-    printf("}\n");
-    fflush(stdout);
-}
-
 void print_error_json(esp_err_t result)
 {
     printf("{");
@@ -100,7 +50,6 @@ void wl_detach(Partition *part, WLmon_Flash *wlmon_flash)
         free(part);
     }
     if (wlmon_flash) {
-        free(wlmon_flash->temp_buff);
         wlmon_flash->~WLmon_Flash();
         free(wlmon_flash);
     }
