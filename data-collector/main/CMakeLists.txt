@@ -3,6 +3,10 @@ set(include_dirs "include")
 set(priv_include_dirs "private_include")
 
 idf_build_get_property(target IDF_TARGET)
+idf_component_get_property(wl_dir wear_levelling COMPONENT_DIR)
+idf_component_get_property(hal_dir hal COMPONENT_DIR)
+
+list(APPEND priv_include_dirs ${wl_dir}/private_include ${hal_dir}/include/hal/)
 
 if(${target} STREQUAL "linux")
     list(APPEND srcs "wlmon_linux.cpp")

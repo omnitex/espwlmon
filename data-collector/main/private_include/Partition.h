@@ -11,7 +11,7 @@
 
 #include "Flash_Access.h"
 #include "esp_partition.h"
-#include "esp_spi_flash.h"  // for SPI_FLASH_SEC_SIZE
+#include "spi_flash_mmap.h"  // for SPI_FLASH_SEC_SIZE
 
 /**
 * @brief This class is used to access partition. Class implements Flash_Access interface

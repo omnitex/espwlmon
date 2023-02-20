@@ -1,13 +1,14 @@
 #ifndef _WLMON_H_
 #define _WLMON_H_
 
-#include "Flash_Access.h"
+#include "WL_Flash.h"
 #include "esp_partition.h"
 
 #ifndef WL_CFG_CRC_CONST
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif
 
+#if 0
 /* Struct definitions taken from WL_Config.h and WL_State.h*/
 typedef struct WL_Config_s {
     size_t   start_addr;    /*!< start address in the flash*/
@@ -34,9 +35,10 @@ public:
     uint32_t reserved[7];   /*!< Reserved space for future use*/
     uint32_t crc;           /*!< CRC of structure*/
 } wl_state_t;
+#endif
 
 // simplified WL_FLash class from WL_Flash.h
-class WLmon_Flash
+class WLmon_Flash: WL_Flash
 {
 public :
     WLmon_Flash();
@@ -57,10 +59,10 @@ public :
     //TODO virtual or not?
     virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
 
-    esp_err_t recoverPos();
+    //esp_err_t recoverPos();
 
-    void fillOkBuff(int n);
-    bool OkBuffSet(int n);
+    //void fillOkBuff(int n);
+    //bool OkBuffSet(int n);
 
     wl_state_t state;
     wl_config_t cfg;

@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
-#include "esp_spi_flash.h" // for SPI_FLASH_SEC_SIZE
+#include "spi_flash_mmap.h"
 #include "esp32/rom/crc.h"
 
 #include "Partition.h"

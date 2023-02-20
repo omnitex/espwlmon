@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp32/rom/crc.h"
+#include "spi_flash_mmap.h"
 #include "wlmon.h"
 
 #define WL_RESULT_CHECK(result) \
@@ -87,7 +88,7 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 
     return ESP_OK;
 }
-
+#if 0
 // recoverPos(), fillOkBuff() and OkBuffSet() taken from WL_Flash.cpp
 esp_err_t WLmon_Flash::recoverPos()
 {
@@ -142,3 +143,5 @@ bool WLmon_Flash::OkBuffSet(int n)
     }
     return result;
 }
+
+#endif
