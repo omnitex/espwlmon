@@ -6,7 +6,7 @@
 
 static const char *TAG = "wlmon";
 
-esp_err_t get_wl_partition(void *arg, const esp_partition_t **partition)
+esp_err_t get_wl_partition(const esp_partition_t **partition)
 {
     wl_config_t test_cfg = {};
     // default to not found; any candidate partition overwrites this by get_wl_config()

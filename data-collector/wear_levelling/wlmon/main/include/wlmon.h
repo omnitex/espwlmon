@@ -39,7 +39,6 @@ private:
 /**
  * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
  *
- * @param arg On target, unused, searching for partition in flash. TODO: On linux file containing partition image.
  * @param[out] partition Pointer for passing found (or constructed) WL partition
  *
  * @return
@@ -49,7 +48,7 @@ private:
  *       - ESP_ERR_INVALID_CRC, if last processed candidate partition failed config CRC check
  *       - ESP_ERR_NOT_FOUND, if no candidate partition is found
 */
-esp_err_t get_wl_partition(void *arg, const esp_partition_t **partition);
+esp_err_t get_wl_partition(const esp_partition_t **partition);
 
 /**
  * @brief Obtain valid, if present, wear leveling config from given partition

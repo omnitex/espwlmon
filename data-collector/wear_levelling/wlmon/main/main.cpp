@@ -37,19 +37,10 @@ static void print_error_task(void *arg)
     }
 }
 
-#if CONFIG_IDF_TARGET_LINUX
-void app_main(int argc, char **argv)
-#else
-void app_main(void)
-#endif
+void app_main()
 {
 
-#if CONFIG_IDF_TARGET_LINUX
-    // TODO on linux get partition from file with partition image
-    result = get_wl_partition(argv[1], &partition);
-#else
-    result = get_wl_partition(NULL, &partition);
-#endif
+    result = get_wl_partition(&partition);
 
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get WL partition for analysis!");
