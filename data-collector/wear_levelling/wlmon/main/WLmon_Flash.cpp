@@ -121,9 +121,7 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
         // OK
         s += retval;
         n -= retval;
-        ESP_LOGI(TAG, "config header write OK");
     } else {
-        // NOT OK
         return ESP_FAIL;
     }
 
@@ -132,7 +130,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
         // OK
         s += retval;
         n -= retval;
-        ESP_LOGI(TAG, "config JSON write OK");
     } else {
         return ESP_FAIL;
     }
@@ -142,7 +139,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
         // OK
         s += retval;
         n -= retval;
-        ESP_LOGI(TAG, "state header write OK");
     } else {
         return ESP_FAIL;
     }
@@ -152,7 +148,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
         // OK
         s += retval;
         n -= retval;
-        ESP_LOGI(TAG, "state JSON write OK");
     } else {
         return ESP_FAIL;
     }
@@ -162,11 +157,9 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
     retval = snprintf(s, n, "}\n");
     if (retval >= 0 && retval < n) {
         // OK
-        ESP_LOGI(TAG, "closing } write OK");
     } else {
         return ESP_FAIL;
     }
-
 
     return ESP_OK;
 }

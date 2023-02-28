@@ -10,22 +10,6 @@
 
 static const char *TAG = "wlmon";
 
-//TODO
-void print_error_json(esp_err_t result)
-{
-    printf("{");
-
-    printf("\"error\":");
-    printf("\"%s\"", esp_err_to_name(result));
-
-    // TODO add verbose message here? simple error name from above could be interpreted at FE
-    // but the semantics could change and it would need to be updated across BE/FE
-    // or print verbose message here and the potential changes that would need to be addressed stay within data-collector
-
-    printf("}\n");
-    fflush(stdout);
-}
-
 /**
  * @brief Check that WL config CRC matches its stored CRC
  *
@@ -200,26 +184,39 @@ esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instan
     return ESP_OK;
 }
 
+int write_error_json(char *s, size_t n, esp_err_t errcode)
+{
+    int retval = snprintf(s, n, "{\"error\":\"%s\"}\n", esp_err_to_name(errcode));
+
+    // TODO add verbose message here? simple error name from above could be interpreted at FE
+    // but the semantics could change and it would need to be updated across BE/FE
+    // or print verbose message here and the potential changes that would need to be addressed stay within data-collector
+    return retval;
+}
+
 esp_err_t wlmon_get_status(char **buffer)
 {
     esp_err_t result;
     const esp_partition_t *partition = NULL;
     WLmon_Flash *wl_instance;
 
-    *buffer = (char *)malloc(WL_STATUS_BUF_SIZE);
+    *buffer = (char *)malloc(WLMON_BUF_SIZE);
     if (*buffer == NULL)
         return ESP_ERR_NO_MEM;
 
-    ESP_LOGI(TAG, "%s: callocated 4K buffer", __func__);
-
     result = get_wl_partition(&partition);
-    //TODO free on error?
+    if (result != ESP_OK)
+        write_error_json(*buffer, WLMON_BUF_SIZE, result);
     WL_RESULT_CHECK(result);
 
     result = wl_attach(partition, &wl_instance);
+    if (result != ESP_OK)
+        write_error_json(*buffer, WLMON_BUF_SIZE, result);
     WL_RESULT_CHECK(result);
 
-    result = wl_instance->write_wl_status_json(*buffer, WL_STATUS_BUF_SIZE);
+    result = wl_instance->write_wl_status_json(*buffer, WLMON_BUF_SIZE);
+    if (result != ESP_OK)
+        write_error_json(*buffer, WLMON_BUF_SIZE, result);
     WL_RESULT_CHECK(result);
 
     result = ESP_OK;

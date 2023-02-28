@@ -8,7 +8,7 @@
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif
 
-#define WL_STATUS_BUF_SIZE 4096
+#define WLMON_BUF_SIZE 4096
 
 #define WL_RESULT_CHECK(result) \
     if (result != ESP_OK) { \
