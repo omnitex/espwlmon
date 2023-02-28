@@ -3,7 +3,6 @@
 #include <string.h>
 #include "esp_log.h"
 #include "spi_flash_mmap.h"
-#include "esp_flash_err.h"
 #include "esp32/rom/crc.h"
 
 #include "Partition.h"
@@ -68,7 +67,7 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 
     if (partition->encrypted) {
         ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
-        return ESP_ERR_FLASH_PROTECTED;
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     size_t cfg_address = partition->size - SPI_FLASH_SEC_SIZE; // fixed position of config struct; last sector of partition
