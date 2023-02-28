@@ -194,15 +194,18 @@ int write_error_json(char *s, size_t n, esp_err_t errcode)
     return retval;
 }
 
+
 esp_err_t wlmon_get_status(char **buffer)
 {
-    esp_err_t result;
+    esp_err_t result = ESP_OK;
     const esp_partition_t *partition = NULL;
     WLmon_Flash *wl_instance;
 
     *buffer = (char *)malloc(WLMON_BUF_SIZE);
-    if (*buffer == NULL)
-        return ESP_ERR_NO_MEM;
+    if (*buffer == NULL) {
+        result = ESP_ERR_NO_MEM;
+    }
+    WL_RESULT_CHECK(result);
 
     result = get_wl_partition(&partition);
     if (result != ESP_OK)

@@ -114,7 +114,7 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 
 esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 {
-    int retval;
+    int retval, max_len = n;
 
     retval = snprintf(s, n, "{\"config\":");
     if (retval >= 0 && retval < n) {
@@ -157,9 +157,13 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
     retval = snprintf(s, n, "}\n");
     if (retval >= 0 && retval < n) {
         // OK
+        s += retval;
+        n -= retval;
     } else {
         return ESP_FAIL;
     }
+
+    ESP_LOGI(TAG, "%s: written JSON of length %d (0x%x)", __func__, max_len-n, max_len-n);
 
     return ESP_OK;
 }
