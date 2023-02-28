@@ -10,6 +10,7 @@
 
 static const char *TAG = "wlmon";
 
+//TODO
 void print_error_json(esp_err_t result)
 {
     printf("{");
@@ -25,6 +26,68 @@ void print_error_json(esp_err_t result)
     fflush(stdout);
 }
 
+/**
+ * @brief Check that WL config CRC matches its stored CRC
+ *
+ * @param state wl_config_t of which to check CRC
+ *
+ * @return
+ *       - ESP_OK, if calculated CRC matches stored CRC
+ *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
+*/
+esp_err_t checkConfigCRC(wl_config_t *cfg)
+{
+    if ( cfg->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)cfg, offsetof(wl_config_t, crc)) ) {
+        return ESP_OK;
+    } else {
+        return ESP_ERR_INVALID_CRC;
+    }
+}
+
+/**
+ * @brief Obtain valid, if present, wear leveling config from given partition
+ *
+ * @param cfg Pointer to config which will be written
+ * @param partition Partition from which to obtain valid WL config
+ *
+ * @return
+ *       - ESP_OK, if config was read, is valid and written correctly;
+ *       - ESP_ERR_NOT_SUPPORTED, if partition has encrypted flag set (TODO could we work with encrypted parititon?)
+ *       - ESP_ERR_INVALID_CRC, if config CRC failed to match its stored CRC
+*/
+esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
+{
+    esp_err_t result = ESP_OK;
+
+    if (partition->encrypted) {
+        ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    size_t cfg_address = partition->size - SPI_FLASH_SEC_SIZE; // fixed position of config struct; last sector of partition
+
+    esp_partition_read(partition, cfg_address, cfg, sizeof(wl_config_t));
+
+    result = checkConfigCRC(cfg);
+    if (result != ESP_OK) {
+        return ESP_ERR_INVALID_CRC;
+    }
+
+    return ESP_OK;
+}
+
+/**
+ * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
+ *
+ * @param[out] partition Pointer for passing found (or constructed) WL partition
+ *
+ * @return
+ *       - ESP_OK, if WL partition is found and config is retrieved, including CRC check
+ *       - ESP_ERR_NOT_FOUND, if no candidate for WL partition was found
+ *       - ESP_ERR_NOT_SUPPORTED, if last processed candidate paritition was encrypted
+ *       - ESP_ERR_INVALID_CRC, if last processed candidate partition failed config CRC check
+ *       - ESP_ERR_NOT_FOUND, if no candidate partition is found
+*/
 esp_err_t get_wl_partition(const esp_partition_t **partition)
 {
     wl_config_t test_cfg = {};
@@ -61,45 +124,6 @@ esp_err_t get_wl_partition(const esp_partition_t **partition)
     return result;
 }
 
-esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
-{
-    esp_err_t result = ESP_OK;
-
-    if (partition->encrypted) {
-        ESP_LOGE(TAG, "%s: cannot read config from encrypted partition!", __func__);
-        return ESP_ERR_NOT_SUPPORTED;
-    }
-
-    size_t cfg_address = partition->size - SPI_FLASH_SEC_SIZE; // fixed position of config struct; last sector of partition
-
-    esp_partition_read(partition, cfg_address, cfg, sizeof(wl_config_t));
-
-    result = checkConfigCRC(cfg);
-    if (result != ESP_OK) {
-        return ESP_ERR_INVALID_CRC;
-    }
-
-    return ESP_OK;
-}
-
-esp_err_t checkStateCRC(wl_state_t *state)
-{
-    if ( state->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)state, offsetof(wl_state_t, crc)) ) {
-        return ESP_OK;
-    } else {
-        return ESP_ERR_INVALID_CRC;
-    }
-}
-
-esp_err_t checkConfigCRC(wl_config_t *cfg)
-{
-    if ( cfg->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)cfg, offsetof(wl_config_t, crc)) ) {
-        return ESP_OK;
-    } else {
-        return ESP_ERR_INVALID_CRC;
-    }
-}
-
 void wl_detach(Partition *part, WLmon_Flash *wlmon_flash)
 {
     if (part) {
@@ -112,6 +136,19 @@ void wl_detach(Partition *part, WLmon_Flash *wlmon_flash)
     }
 }
 
+/**
+ * @brief Reconstructs WL status and stores it in created WLmon_Flash instance
+ *
+ * @param partition Partition to which to "attach"; from which to reconstruct WL status
+ * @param[out] wlmon_instance Pointer for passing the created and filled Wlmon_Flash instance
+ *
+ * @return
+ *       - ESP_OK, if attaching was successful and wlmon_instance points to created instance
+ *       - ESP_ERR_NO_MEM, if memory allocation for instances or temp buffer failed
+ *       - ESP_ERR_NOT_SUPPORTED, if attempting to reconstruct from encrypted partition
+ *       - ESP_ERR_INVALID_CRC, if CRC check of either WL config or state failed
+ *       - ESP_ERR_FLASH_OP_FAIL, if reading from flash when reconstructing status fails
+*/
 esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instance)
 {
     void *wlmon_flash_ptr = NULL;
@@ -163,3 +200,29 @@ esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instan
     return ESP_OK;
 }
 
+esp_err_t wlmon_get_status(char **buffer)
+{
+    esp_err_t result;
+    const esp_partition_t *partition = NULL;
+    WLmon_Flash *wl_instance;
+
+    *buffer = (char *)malloc(WL_STATUS_BUF_SIZE);
+    if (*buffer == NULL)
+        return ESP_ERR_NO_MEM;
+
+    ESP_LOGI(TAG, "%s: callocated 4K buffer", __func__);
+
+    result = get_wl_partition(&partition);
+    //TODO free on error?
+    WL_RESULT_CHECK(result);
+
+    result = wl_attach(partition, &wl_instance);
+    WL_RESULT_CHECK(result);
+
+    result = wl_instance->write_wl_status_json(*buffer, WL_STATUS_BUF_SIZE);
+    WL_RESULT_CHECK(result);
+
+    result = ESP_OK;
+
+    return result;
+}

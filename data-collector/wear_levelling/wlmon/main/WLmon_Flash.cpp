@@ -5,17 +5,20 @@
 #include "spi_flash_mmap.h"
 #include "wlmon.h"
 
-#define WL_RESULT_CHECK(result) \
-    if (result != ESP_OK) { \
-        ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
-        return (result); \
-    }
-
 static const char *TAG = "wlmon";
 
 WLmon_Flash::WLmon_Flash() {}
 
 WLmon_Flash::~WLmon_Flash() {}
+
+esp_err_t WLmon_Flash::checkStateCRC(wl_state_t *state)
+{
+    if ( state->crc == crc32_le(WL_CFG_CRC_CONST, (const uint8_t *)state, offsetof(wl_state_t, crc)) ) {
+        return ESP_OK;
+    } else {
+        return ESP_ERR_INVALID_CRC;
+    }
+}
 
 esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 {
@@ -55,7 +58,7 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     result = this->flash_drv->read(this->addr_state1, &this->state, sizeof(wl_state_t));
     ESP_LOGD(TAG, "state read returned %p (%s)", result, esp_err_to_name(result));
 
-    result = checkStateCRC(&this->state);
+    result = this->checkStateCRC(&this->state);
     if (result != ESP_OK) {
         return ESP_ERR_INVALID_CRC;
     }
@@ -85,53 +88,85 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     return ESP_OK;
 }
 
-void WLmon_Flash::print_wl_config_json()
+int WLmon_Flash::write_wl_config_json(char *s, size_t n)
 {
-    printf("{");
-    printf("\"start_addr\":\"0x%x\",", this->cfg.start_addr);
-    printf("\"full_mem_size\":\"0x%x\",", this->cfg.full_mem_size);
-    printf("\"page_size\":\"0x%x\",", this->cfg.page_size);
-    printf("\"sector_size\":\"0x%x\",", this->cfg.sector_size);
-    printf("\"updaterate\":\"0x%x\",", this->cfg.updaterate);
-    printf("\"wr_size\":\"0x%x\",", this->cfg.wr_size);
-    printf("\"version\":\"0x%x\",", this->cfg.version);
-    printf("\"temp_buff_size\":\"0x%x\",", this->cfg.temp_buff_size);
-    printf("\"crc\":\"0x%x\"", this->cfg.crc);
-    printf("}");
-    fflush(stdout);
+    int retval = snprintf(s, n,
+        "{\"start_addr\":\"0x%x\",\"full_mem_size\":\"0x%x\",\"page_size\":\"0x%x\",\
+\"sector_size\":\"0x%x\",\"updaterate\":\"0x%x\",\"wr_size\":\"0x%x\",\
+\"version\":\"0x%x\",\"temp_buff_size\":\"0x%x\",\"crc\":\"0x%x\"}",
+        this->cfg.start_addr, this->cfg.full_mem_size, this->cfg.page_size, this->cfg.sector_size,
+        this->cfg.updaterate, this->cfg.wr_size, this->cfg.version, this->cfg.temp_buff_size, this->cfg.crc);
+
+    return retval;
 }
 
-void WLmon_Flash::print_wl_state_json()
+int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 {
-    printf("{");
-    printf("\"pos\":\"0x%x\",", this->state.pos);
-    printf("\"max_pos\":\"0x%x\",", this->state.max_pos);
-    printf("\"move_count\":\"0x%x\",", this->state.move_count);
-    printf("\"access_count\":\"0x%x\",", this->state.access_count);
-    printf("\"max_count\":\"0x%x\",", this->state.max_count);
-    printf("\"block_size\":\"0x%x\",", this->state.block_size);
-    printf("\"version\":\"0x%x\",", this->state.version);
-    printf("\"max_count\":\"0x%x\",", this->state.max_count);
-    printf("\"device_id\":\"0x%x\",", this->state.device_id);
-    printf("\"crc\":\"0x%x\"", this->state.crc);
-    printf("}");
-    fflush(stdout);
+    int retval = snprintf(s, n,
+        "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
+\"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
+\"version\":\"0x%x\",\"device_id\":\"0x%x\",\"crc\":\"0x%x\"}",
+        this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
+        this->state.max_count, this->state.block_size, this->state.version, this->state.device_id, this->state.crc);
+
+    return retval;
 }
 
-void WLmon_Flash::print_wl_status_json()
+esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 {
-    printf("{");
-    printf("\"config\":");
+    int retval;
 
-    print_wl_config_json();
+    retval = snprintf(s, n, "{\"config\":");
+    if (retval >= 0 && retval < n) {
+        // OK
+        s += retval;
+        n -= retval;
+        ESP_LOGI(TAG, "config header write OK");
+    } else {
+        // NOT OK
+        return ESP_FAIL;
+    }
 
-    printf(",\"state\":");
+    retval = write_wl_config_json(s, n);
+    if (retval >= 0 && retval < n) {
+        // OK
+        s += retval;
+        n -= retval;
+        ESP_LOGI(TAG, "config JSON write OK");
+    } else {
+        return ESP_FAIL;
+    }
 
-    print_wl_state_json();
+    retval = snprintf(s, n, ",\"state\":");
+    if (retval >= 0 && retval < n) {
+        // OK
+        s += retval;
+        n -= retval;
+        ESP_LOGI(TAG, "state header write OK");
+    } else {
+        return ESP_FAIL;
+    }
+
+    retval = write_wl_state_json(s, n);
+    if (retval >= 0 && retval < n) {
+        // OK
+        s += retval;
+        n -= retval;
+        ESP_LOGI(TAG, "state JSON write OK");
+    } else {
+        return ESP_FAIL;
+    }
 
     // TODO dummy addr in static analysis does not make much sense as it is written in updateWL()?
-    //printf(",\"dummy_addr\":\"0x%x\"", this->dummy_addr);
 
-    printf("}\n");
-    fflush(stdout);
+    retval = snprintf(s, n, "}\n");
+    if (retval >= 0 && retval < n) {
+        // OK
+        ESP_LOGI(TAG, "closing } write OK");
+    } else {
+        return ESP_FAIL;
+    }
+
+
+    return ESP_OK;
 }
