@@ -129,7 +129,7 @@ esp_err_t WL_Flash::init()
     uint32_t crc1 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, check_size);
     uint32_t crc2 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)state_copy, check_size);
 
-    ESP_LOGD(TAG, "%s - config ID=%i, stored ID=%i, access_count=%i, block_size=%i, max_count=%i, pos=%i, move_count=0x%8.8X",
+    ESP_LOGD(TAG, "%s - config ID=%i, stored ID=%i, access_count=%i, block_size=%i, max_count=%i, pos=%i, move_count=0x%8.8X, cycle_count=0x%8.8x",
              __func__,
              this->cfg.version,
              this->state.version,
@@ -137,7 +137,8 @@ esp_err_t WL_Flash::init()
              this->state.block_size,
              this->state.max_count,
              this->state.pos,
-             this->state.move_count);
+             this->state.move_count,
+             this->state.cycle_count);
 
     ESP_LOGD(TAG, "%s starts: crc1= 0x%08x, crc2 = 0x%08x, this->state.crc= 0x%08x, state_copy->crc= 0x%08x, version=%i, read_version=%i", __func__, crc1, crc2, this->state.crc, state_copy->crc, this->cfg.version, this->state.version);
     if ((crc1 == this->state.crc) && (crc2 == state_copy->crc)) {
@@ -276,6 +277,7 @@ esp_err_t WL_Flash::initSections()
     this->state.version = this->cfg.version;
     this->state.block_size = this->cfg.page_size;
     this->state.device_id = esp_random();
+    this->state.cycle_count = 0;
     memset(this->state.reserved, 0, sizeof(this->state.reserved));
 
     this->state.max_pos = 1 + this->flash_size / this->cfg.page_size;
@@ -483,6 +485,11 @@ esp_err_t WL_Flash::updateWL()
         this->state.move_count++;
         if (this->state.move_count >= (this->state.max_pos - 1)) {
             this->state.move_count = 0;
+            // full cycle achieved; as both pos and move_count are zeroed,
+            // keep the information about passed cycle by incrementing cycle_count
+            // this will NEVER be zeroed, thus allowing approximate calculation of total number of erases
+            // and from that an estimate of sector wear-out
+            this->state.cycle_count++;
         }
         // write main state
         this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, WL_STATE_CRC_LEN_V2);
@@ -495,7 +502,7 @@ esp_err_t WL_Flash::updateWL()
         WL_RESULT_CHECK(result);
         result = this->flash_drv->write(this->addr_state2, &this->state, sizeof(wl_state_t));
         WL_RESULT_CHECK(result);
-        ESP_LOGD(TAG, "%s - move_count= 0x%08x, pos= 0x%08x, ", __func__, this->state.move_count, this->state.pos);
+        ESP_LOGD(TAG, "%s - cycle_count= 0x%08x, move_count= 0x%08x, pos= 0x%08x, ", __func__, this->state.cycle_count, this->state.move_count, this->state.pos);
     }
     // Save structures to the flash... and check result
     if (result == ESP_OK) {
@@ -619,6 +626,6 @@ esp_err_t WL_Flash::flush()
     esp_err_t result = ESP_OK;
     this->state.access_count = this->state.max_count - 1;
     result = this->updateWL();
-    ESP_LOGD(TAG, "%s - result= 0x%08x, move_count= 0x%08x", __func__, result, this->state.move_count);
+    ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, this->state.move_count, this->state.cycle_count);
     return result;
 }
