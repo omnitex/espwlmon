@@ -1,6 +1,8 @@
 #include "WL_Advanced.h"
 #include <stdlib.h>
+#include <string.h>
 #include "esp_log.h"
+#include "esp_random.h"
 #include "crc32.h"
 
 static const char *TAG = "wl_advanced";
@@ -43,20 +45,22 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     // each sector will have a record, count how many sectors will be needed to keep all records
     uint32_t erase_count_sectors = ((sector_count * ERASE_COUNT_RECORD_SIZE) + this->cfg.sector_size - 1) / this->cfg.sector_size;
 
-    ESP_LOGI(TAG, "%s - require %u sectors for erase counts records", __func__, erase_count_sectors);
+    ESP_LOGD(TAG, "%s: require %u sectors for erase count records", __func__, erase_count_sectors);
 
     // allocate sectors for keeping erase count records, in two copies
     this->flash_size = this->flash_size - 2 * erase_count_sectors;
     // and save their addresses
-    this->addr_erase_counts1 = this->addr_state1 - 2 * erase_count_sectors;
-    this->addr_erase_counts1 = this->addr_state1 - erase_count_sectors;
+    this->addr_erase_counts1 = this->addr_state1 - 2 * erase_count_sectors * this->cfg.sector_size;
+    this->addr_erase_counts2 = this->addr_state1 - erase_count_sectors * this->cfg.sector_size;
+
+    ESP_LOGD(TAG, "%s: erase_counts1 at %p, erase_count2 at %p", __func__, this->addr_erase_counts1, this->addr_erase_counts2);
 
     return ESP_OK;
 }
 
 esp_err_t WL_Advanced::init()
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
+    ESP_LOGD(TAG, "%s: begin", __func__);
 
     // base init() needed for this->state.max_pos
     esp_err_t result = WL_Flash::init();
@@ -74,29 +78,58 @@ esp_err_t WL_Advanced::init()
     return ESP_OK;
 }
 
-void WL_Advanced::fillOkBuff(int n)
+void WL_Advanced::fillOkBuff(size_t sector)
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
-    //TODO
-    WL_Flash::fillOkBuff(n);
+    ESP_LOGD(TAG, "%s: begin", __func__);
+
+    uint32_t *buff = (uint32_t *)this->temp_buff;
+
+    buff[0] = this->state.device_id;
+    buff[1] = this->state.pos;
+    buff[2] = sector;
+    // TODO use offsetof() instead?
+    buff[3] = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)buff, 3 * sizeof(uint32_t));
+
+    ESP_LOGD(TAG, "%s: device_id=%u, pos=%u, sector=%u, crc=%u", __func__, buff[0], buff[1], buff[2], buff[3]);
 }
 
-bool WL_Advanced::OkBuffSet(int n)
+bool WL_Advanced::OkBuffSet(int pos)
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
-    //TODO
-    return WL_Flash::OkBuffSet(n);
+    ESP_LOGD(TAG, "%s: begin", __func__);
+
+    uint32_t *buff = (uint32_t *)this->temp_buff;
+
+    if (buff[0] != this->state.device_id)
+        return false;
+
+    if (buff[1] != pos)
+        return false;
+
+    // buff[2] is sector number, that is not deterministic and cannot be checked
+
+    if (buff[3] != crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)buff, 3 * sizeof(uint32_t)))
+        return false;
+
+    return true;
 }
+
+esp_err_t WL_Advanced::recoverPos()
+{
+    ESP_LOGD(TAG, "%s: begin", __func__);
+    return WL_Flash::recoverPos();
+}
+
 
 esp_err_t WL_Advanced::updateEraseCounts()
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
+    ESP_LOGD(TAG, "%s: begin", __func__);
     return ESP_OK;
 }
 
 esp_err_t WL_Advanced::updateWL(size_t sector)
 {
-    ESP_LOGI(TAG, "%s: begin - sector %lu", __func__, sector);
+    ESP_LOGD(TAG, "%s: begin - sector %lu", __func__, sector);
+    this->fillOkBuff(sector);
 
     esp_err_t result = ESP_OK;
     this->state.access_count++;
@@ -190,16 +223,9 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     return result;
 }
 
-esp_err_t WL_Advanced::recoverPos()
-{
-    ESP_LOGI(TAG, "%s: begin", __func__);
-    //TODO
-    return WL_Flash::recoverPos();
-}
-
 esp_err_t WL_Advanced::initSections()
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
+    ESP_LOGD(TAG, "%s: begin", __func__);
 
     esp_err_t result = ESP_OK;
     this->state.pos = 0;
@@ -243,7 +269,7 @@ esp_err_t WL_Advanced::initSections()
 
 esp_err_t WL_Advanced::erase_sector(size_t sector)
 {
-    ESP_LOGI(TAG, "%s: begin", __func__);
+    ESP_LOGD(TAG, "%s: begin", __func__);
 
     esp_err_t result = ESP_OK;
     if (!this->initialized) {

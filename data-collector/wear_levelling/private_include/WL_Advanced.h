@@ -28,10 +28,10 @@ protected:
 
     esp_err_t config(wl_config_t *cfg, Flash_Access *flash_drv);
     esp_err_t updateWL(size_t sector);
-    esp_err_t recoverPos() override;
+    esp_err_t recoverPos();
     esp_err_t initSections();
-    void fillOkBuff(int n) override;
-    bool OkBuffSet(int n) override;
+    void fillOkBuff(size_t sector);
+    bool OkBuffSet(int n);
 
 };
 
