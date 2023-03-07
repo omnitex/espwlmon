@@ -13,6 +13,7 @@
 #include "WL_Flash.h"
 #include "WL_Ext_Perf.h"
 #include "WL_Ext_Safe.h"
+#include "WL_Advanced.h"
 #include "SPI_Flash.h"
 #include "Partition.h"
 
@@ -121,6 +122,16 @@ esp_err_t wl_mount(const esp_partition_t *partition, wl_handle_t *out_handle)
 #endif // CONFIG_WL_SECTOR_MODE
 #endif // CONFIG_WL_SECTOR_SIZE
 #if CONFIG_WL_SECTOR_SIZE == 4096
+#if CONFIG_WL_ADVANCED_MODE
+    wl_flash_ptr = malloc(sizeof(WL_Advanced));
+
+    if (wl_flash_ptr == NULL) {
+        result = ESP_ERR_NO_MEM;
+        ESP_LOGE(TAG, "%s: can't allocate WL_Advanced", __func__);
+        goto out;
+    }
+    wl_flash = new (wl_flash_ptr) WL_Advanced();
+#else
     wl_flash_ptr = malloc(sizeof(WL_Flash));
 
     if (wl_flash_ptr == NULL) {
@@ -129,6 +140,7 @@ esp_err_t wl_mount(const esp_partition_t *partition, wl_handle_t *out_handle)
         goto out;
     }
     wl_flash = new (wl_flash_ptr) WL_Flash();
+#endif // CONFIG_WL_ADVANCED_MODE
 #endif // CONFIG_WL_SECTOR_SIZE
 
     result = wl_flash->config(&cfg, part);
