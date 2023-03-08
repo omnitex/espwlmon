@@ -87,9 +87,12 @@ void WL_Advanced::fillOkBuff(int n)
 
     uint32_t *buff = (uint32_t *)this->temp_buff;
 
+    size_t physical_sector = this->calcAddr(sector * this->cfg.sector_size) / this->cfg.sector_size;
+    ESP_LOGD(TAG, "%s: sector %u maps to %u", __func__, sector, physical_sector);
+
     buff[0] = this->state.device_id;
     buff[1] = this->state.pos;
-    buff[2] = sector;
+    buff[2] = physical_sector;
     // TODO use offsetof() instead? define a struct in WL_Advanced.h?
     buff[3] = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)buff, 3 * sizeof(uint32_t));
 
@@ -99,7 +102,6 @@ void WL_Advanced::fillOkBuff(int n)
 bool WL_Advanced::OkBuffSet(int n)
 {
     int pos = n;
-    //ESP_LOGD(TAG, "%s: begin - pos=%i", __func__, pos);
 
     uint32_t *buff = (uint32_t *)this->temp_buff;
 
@@ -109,12 +111,12 @@ bool WL_Advanced::OkBuffSet(int n)
     if (buff[1] != pos)
         return false;
 
-    // buff[2] is sector number, that is not deterministic and cannot be checked
+    // buff[2] is sector number, that we can obtain from this record
 
     if (buff[3] != crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)buff, 3 * sizeof(uint32_t)))
         return false;
 
-    ESP_LOGD(TAG, "%s: buffer OK at pos %i", __func__, pos);
+    ESP_LOGV(TAG, "%s: buffer OK at pos %i", __func__, pos);
 
     return true;
 }
@@ -131,9 +133,8 @@ esp_err_t WL_Advanced::updateEraseCounts()
     for (size_t i = 0; i < this->state.max_pos; i++) {
         this->flash_drv->read(this->addr_state1 + sizeof(wl_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
         if (this->OkBuffSet(i)) {
-            // increment erase count, indexing by sector
+            // increment erase count, indexing by sector number stored in buff[2]
             this->erase_count_buffer[buff[2]]++;
-            ESP_LOGD(TAG, "%s: erase count of %u ++", __func__, buff[2]);
         }
     }
 
@@ -151,8 +152,6 @@ esp_err_t WL_Advanced::updateEraseCounts()
 esp_err_t WL_Advanced::updateWL(size_t sector)
 {
     ESP_LOGD(TAG, "%s: begin - sector %lu", __func__, sector);
-    //TODO remove
-    //this->updateEraseCounts();
 
     esp_err_t result = ESP_OK;
     this->state.access_count++;
