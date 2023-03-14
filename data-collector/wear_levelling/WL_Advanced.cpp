@@ -45,12 +45,10 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     // !!n, where n != 0, equals 1; so 1 or 2 additional sectors will add a single record
     // size in bytes, not aligned in any way
     uint32_t erase_count_records_size = (sector_count / 3 + !!(sector_count % 3)) * sizeof(wl_erase_count_t);
-    ESP_LOGD(TAG, "%s: erase_count_records_size %u", __func__, erase_count_records_size);
-
     // count how many sectors will be needed to keep all records
     uint32_t erase_count_sectors = (erase_count_records_size + this->cfg.sector_size - 1) / this->cfg.sector_size;
 
-    ESP_LOGD(TAG, "%s: require %u sectors for erase count records", __func__, erase_count_sectors);
+    ESP_LOGD(TAG, "%s: require %u B => %u sectors for erase count records", __func__, erase_count_records_size, erase_count_sectors);
 
     // size aligned to sectors, in bytes
     this->erase_count_records_size = erase_count_sectors * this->cfg.sector_size;
@@ -61,15 +59,11 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     this->addr_erase_counts1 = this->addr_state1 - 2 * this->erase_count_records_size;
     this->addr_erase_counts2 = this->addr_state1 - this->erase_count_records_size;
 
-    ESP_LOGD(TAG, "%s: erase_counts1 at %p, erase_count2 at %p", __func__, this->addr_erase_counts1, this->addr_erase_counts2);
-
     return ESP_OK;
 }
 
 esp_err_t WL_Advanced::init()
 {
-    ESP_LOGD(TAG, "%s: begin", __func__);
-
     // base init() needed for making this->state.max_pos accessible
     esp_err_t result = WL_Flash::init();
     if (result != ESP_OK) {
@@ -94,12 +88,10 @@ esp_err_t WL_Advanced::init()
 void WL_Advanced::fillOkBuff(int n)
 {
     int sector = n;
-    ESP_LOGD(TAG, "%s: begin - sector=%i", __func__, sector);
-
     wl_sector_erase_record_t *record_buff = (wl_sector_erase_record_t *)this->temp_buff;
 
     size_t physical_sector = this->calcAddr(sector * this->cfg.sector_size) / this->cfg.sector_size;
-    ESP_LOGD(TAG, "%s: sector %u maps to %u", __func__, sector, physical_sector);
+    ESP_LOGV(TAG, "%s: sector %u maps to %u", __func__, sector, physical_sector);
 
     record_buff->device_id = this->state.device_id;
     record_buff->pos = this->state.pos;
@@ -126,26 +118,23 @@ bool WL_Advanced::OkBuffSet(int n)
     if (record_buff->crc != crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)record_buff, offsetof(wl_sector_erase_record_t, crc)))
         return false;
 
-    ESP_LOGV(TAG, "%s: buffer OK at pos %i", __func__, pos);
-
     return true;
 }
 
 esp_err_t WL_Advanced::updateEraseCounts()
 {
-    ESP_LOGD(TAG, "%s: begin", __func__);
-
     esp_err_t result = ESP_OK;
     wl_sector_erase_record_t *record_buff = (wl_sector_erase_record_t *)this->temp_buff;
 
     // go through all pos update records and tally up erase counts to buffer, incrementing existing counts
     for (uint32_t i = 0; i < this->state.max_pos; i++) {
-        result = this->flash_drv->read(this->addr_state1 + sizeof(wl_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+        result = this->flash_drv->read(this->addr_state1 + sizeof(wl_state_t) + i * sizeof(wl_sector_erase_record_t), record_buff, sizeof(wl_sector_erase_record_t));
         WL_RESULT_CHECK(result);
 
         if (this->OkBuffSet(i)) {
             // increment erase count, indexing by sector number
             this->erase_count_buffer[record_buff->sector]++;
+            ESP_LOGD(TAG, "%s: buffer OK at pos %u, sector %u++ => %u", __func__, i, record_buff->sector, this->erase_count_buffer[record_buff->sector]);
         } else {
             ESP_LOGD(TAG, "%s: found pos at %i", __func__, i);
             break;
@@ -207,15 +196,11 @@ esp_err_t WL_Advanced::updateEraseCounts()
 
     //TODO second copy?
 
-    ESP_LOGD(TAG, "%s: return", __func__);
-
     return ESP_OK;
 }
 
 esp_err_t WL_Advanced::readEraseCounts()
 {
-    ESP_LOGD(TAG, "%s: begin", __func__);
-
     esp_err_t result = ESP_OK;
 
     wl_erase_count_t *erase_count_buff = (wl_erase_count_t *)this->temp_buff;
@@ -246,20 +231,17 @@ esp_err_t WL_Advanced::readEraseCounts()
             }
         }
 
-        ESP_LOGD(TAG, "%s: read erase counts: %u->%u, %u->%u, %u->%u", __func__,
+        ESP_LOGV(TAG, "%s: read erase counts: | %u => %u | %u => %u | %u => %u |", __func__,
             erase_count_buff->pairs[0].sector, erase_count_buff->pairs[0].erase_count,
             erase_count_buff->pairs[1].sector, erase_count_buff->pairs[1].erase_count,
             erase_count_buff->pairs[2].sector, erase_count_buff->pairs[2].erase_count);
     }
 
-    ESP_LOGD(TAG, "%s: return", __func__);
     return result;
 }
 
 esp_err_t WL_Advanced::updateWL(size_t sector)
 {
-    ESP_LOGD(TAG, "%s: begin - sector %lu", __func__, sector);
-
     esp_err_t result = ESP_OK;
     this->state.access_count++;
     if (this->state.access_count < this->state.max_count) {
@@ -267,7 +249,7 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     }
     // Here we have to move the block and increase the state
     this->state.access_count = 0;
-    ESP_LOGV(TAG, "%s - access_count= 0x%08x, pos= 0x%08x", __func__, this->state.access_count, this->state.pos);
+    ESP_LOGV(TAG, "%s - sector=%u, access_count= 0x%08x, pos= 0x%08x", __func__, sector, this->state.access_count, this->state.pos);
     // copy data to dummy block
     size_t data_addr = this->state.pos + 1; // next block, [pos+1] copy to [pos]
     if (data_addr >= this->state.max_pos) {
@@ -357,7 +339,6 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
 //TODO cycle count also in here?
 esp_err_t WL_Advanced::initSections()
 {
-    ESP_LOGD(TAG, "%s: begin", __func__);
     esp_err_t result = ESP_OK;
 
     result = WL_Flash::initSections();
@@ -368,20 +349,16 @@ esp_err_t WL_Advanced::initSections()
     result = this->flash_drv->erase_range(this->addr_erase_counts2, this->erase_count_records_size);
     WL_RESULT_CHECK(result);
 
-    ESP_LOGD(TAG, "%s: OK", __func__);
-
     return result;
 }
 
 esp_err_t WL_Advanced::erase_sector(size_t sector)
 {
-    ESP_LOGD(TAG, "%s: begin", __func__);
-
     esp_err_t result = ESP_OK;
     if (!this->initialized) {
         return ESP_ERR_INVALID_STATE;
     }
-    ESP_LOGD(TAG, "%s - sector= 0x%08x", __func__, (uint32_t) sector);
+    ESP_LOGV(TAG, "%s - sector= 0x%08x", __func__, (uint32_t) sector);
     // pass sector to updateWl() so it can use it in pos update record
     result = this->updateWL(sector);
     WL_RESULT_CHECK(result);
@@ -395,13 +372,13 @@ esp_err_t WL_Advanced::flush()
 {
     esp_err_t result = ESP_OK;
     this->state.access_count = this->state.max_count - 1;
+
     // passing pos as a fake sector to be erased
     // dummy sector IS indeed erased by updating with access_count = max_count - 1
     // so after full loop, counting that every sector was erased additionally once
     // is actually a realistic approach
-    ESP_LOGD(TAG, "%s - updateWL(%u)", __func__, this->state.pos);
     result = this->updateWL(this->state.pos);
 
-    ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, this->state.move_count, this->state.cycle_count);
+    ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, this->state.cycle_count, this->state.move_count);
     return result;
 }
