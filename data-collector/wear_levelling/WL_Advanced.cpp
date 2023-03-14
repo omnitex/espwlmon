@@ -43,19 +43,23 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     // | sector number 2B | erase count 2B | sn 2B | ec 2B | sn 2B | ec 2B | crc (of all previous fields) 4B |
     // count how many sector triplets will be saved + possible 1 or 2 sectors forming additional record; all groups will have 16B record
     // !!n, where n != 0, equals 1; so 1 or 2 additional sectors will add a single record
-    this->erase_count_records_size = (sector_count / 3 + !!(sector_count % 3)) * sizeof(wl_erase_count_t);
-    ESP_LOGD(TAG, "%s: erase_count_records_size %u", __func__, this->erase_count_records_size);
+    // size in bytes, not aligned in any way
+    uint32_t erase_count_records_size = (sector_count / 3 + !!(sector_count % 3)) * sizeof(wl_erase_count_t);
+    ESP_LOGD(TAG, "%s: erase_count_records_size %u", __func__, erase_count_records_size);
 
     // count how many sectors will be needed to keep all records
     uint32_t erase_count_sectors = (erase_count_records_size + this->cfg.sector_size - 1) / this->cfg.sector_size;
 
     ESP_LOGD(TAG, "%s: require %u sectors for erase count records", __func__, erase_count_sectors);
 
+    // size aligned to sectors, in bytes
+    this->erase_count_records_size = erase_count_sectors * this->cfg.sector_size;
+
     // allocate sectors for keeping erase count records, in two copies
-    this->flash_size = this->flash_size - 2 * erase_count_sectors * this->cfg.sector_size;
+    this->flash_size = this->flash_size - 2 * this->erase_count_records_size;
     // and save their addresses
-    this->addr_erase_counts1 = this->addr_state1 - 2 * erase_count_sectors * this->cfg.sector_size;
-    this->addr_erase_counts2 = this->addr_state1 - erase_count_sectors * this->cfg.sector_size;
+    this->addr_erase_counts1 = this->addr_state1 - 2 * this->erase_count_records_size;
+    this->addr_erase_counts2 = this->addr_state1 - this->erase_count_records_size;
 
     ESP_LOGD(TAG, "%s: erase_counts1 at %p, erase_count2 at %p", __func__, this->addr_erase_counts1, this->addr_erase_counts2);
 
@@ -157,6 +161,7 @@ esp_err_t WL_Advanced::updateEraseCounts()
     // erase sector(s) for storing first copy of updated erase counts
     // TODO erase has to be done by sectors
     result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
+    WL_RESULT_CHECK(result);
 
     // save non zero erase counts to flash; here i == sector number as incrementing has been done in this manner
     for (uint32_t i = 0; i < this->state.max_pos; i++) {
@@ -175,8 +180,8 @@ esp_err_t WL_Advanced::updateEraseCounts()
             pair_index++;
 
             // if a triplet is assembled OR there won't be a full one
-            if (pair_index >= 3 || (i + 1) >= this->state.max_pos) {
-                ESP_LOGD(TAG, "%s: triplet ready (sector %u out of %u)", __func__, sector, this->state.max_pos);
+            if (pair_index >= 3) {
+                ESP_LOGD(TAG, "%s: triplet ready (sector %u out of %u) for write at index %u", __func__, sector, this->state.max_pos, erase_count_index);
                 erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
                 // write triplet with CRC to flash
                 result = this->flash_drv->write(this->addr_erase_counts1 + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
@@ -190,6 +195,16 @@ esp_err_t WL_Advanced::updateEraseCounts()
 
         }
     }
+
+    // if an incomplete pair is formed, write it also
+    if (pair_index > 0) {
+        ESP_LOGD(TAG, "%s: incomplete triplet for write at index %u", __func__, erase_count_index);
+        erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
+        result = this->flash_drv->write(this->addr_erase_counts1 + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
+        WL_RESULT_CHECK(result);
+        ESP_LOGD(TAG, "%s: incomplete triplet written", __func__);
+    }
+
     //TODO second copy?
 
     ESP_LOGD(TAG, "%s: return", __func__);
@@ -230,7 +245,7 @@ esp_err_t WL_Advanced::readEraseCounts()
                 this->erase_count_buffer[erase_count_buff->pairs[i].sector] = erase_count_buff->pairs[i].erase_count;
             }
         }
-    
+
         ESP_LOGD(TAG, "%s: read erase counts: %u->%u, %u->%u, %u->%u", __func__,
             erase_count_buff->pairs[0].sector, erase_count_buff->pairs[0].erase_count,
             erase_count_buff->pairs[1].sector, erase_count_buff->pairs[1].erase_count,
@@ -344,7 +359,7 @@ esp_err_t WL_Advanced::initSections()
 {
     ESP_LOGD(TAG, "%s: begin", __func__);
     esp_err_t result = ESP_OK;
-    
+
     result = WL_Flash::initSections();
     WL_RESULT_CHECK(result);
 
@@ -380,11 +395,13 @@ esp_err_t WL_Advanced::flush()
 {
     esp_err_t result = ESP_OK;
     this->state.access_count = this->state.max_count - 1;
-    //TODO this will skew erase counts and make a fake record
-    // use smt like UINT32_MAX as an invalid value?
-    // what about this->state.pos?
-    result = this->updateWL(0);
-    this->updateEraseCounts();
+    // passing pos as a fake sector to be erased
+    // dummy sector IS indeed erased by updating with access_count = max_count - 1
+    // so after full loop, counting that every sector was erased additionally once
+    // is actually a realistic approach
+    ESP_LOGD(TAG, "%s - updateWL(%u)", __func__, this->state.pos);
+    result = this->updateWL(this->state.pos);
+
     ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, this->state.move_count, this->state.cycle_count);
     return result;
 }
