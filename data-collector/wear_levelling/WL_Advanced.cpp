@@ -70,8 +70,6 @@ esp_err_t WL_Advanced::init()
         return result;
     }
 
-    // allocate buffer big enough for 16bit number for each sector
-    //TODO max_pos is 1 bigger than number of sectors, use the last 16bits for something?
     this->erase_count_buffer_size = this->state.max_pos * sizeof(uint16_t);
     this->erase_count_buffer = (uint16_t *)malloc(this->erase_count_buffer_size);
     if (this->erase_count_buffer == NULL) {
@@ -148,7 +146,6 @@ esp_err_t WL_Advanced::updateEraseCounts()
     uint32_t erase_count_index = 0;
 
     // erase sector(s) for storing first copy of updated erase counts
-    // TODO erase has to be done by sectors
     result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
     WL_RESULT_CHECK(result);
 
@@ -206,9 +203,6 @@ esp_err_t WL_Advanced::readEraseCounts()
     wl_erase_count_t *erase_count_buff = (wl_erase_count_t *)this->temp_buff;
 
     memset(this->erase_count_buffer, 0, this->erase_count_buffer_size);
-
-    //TODO max_pos is not recalculated and can go beyond allocated space?
-    // own max_something?
 
     // go through saved erase counts in flash in this format
     // | sector | erase count | sector | erase count | sector | erase count | crc |
