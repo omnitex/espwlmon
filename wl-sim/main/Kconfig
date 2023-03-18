@@ -1,0 +1,18 @@
+menu "WL simulation"
+    choice WL_SIM_MODE
+        bool "WL simulation mode"
+        default WL_SIM_MODE_CYCLE_COUNT
+        help
+            Choose implementation of wear levellling.
+
+        config WL_SIM_MODE_CYCLE_COUNT
+            bool "Cycle count"
+        config WL_SIM_MODE_ADVANCED
+            bool "Advanced"
+    endchoice
+
+    config WL_SIM_MODE
+        int
+        default 0 if WL_SIM_MODE_CYCLE_COUNT
+        default 1 if WL_SIM_MODE_ADVANCED
+endmenu
