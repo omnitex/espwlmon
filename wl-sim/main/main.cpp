@@ -10,7 +10,7 @@ static const char *TAG = "wl-sim";
 //TODO argparse
 
 #define RANDOM false
-#define ITERATIONS 1000
+#define ITERATIONS 100000
 #define RESTART_PROBABILITY 1 // restart after each erase, in percent
 #define ERASE_ADDRESS (FLASH_SIZE/3)
 #define ERASE_SIZE (0x100)
@@ -45,6 +45,8 @@ int main()
 
     print_erase_counts();
     print_vars();
+    print_reconstructed();
 
     return 0;
 }
+

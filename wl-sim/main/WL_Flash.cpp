@@ -48,21 +48,16 @@ int updateWL()
     // write pos updates...
 
     pos++;
-    if (pos == MAX_POS/4 || pos == MAX_POS/2 || pos == 3*MAX_POS/4 || pos >= MAX_POS) {
-        ESP_LOGI(TAG,"pos=%lu, breakpoints %u, %u, %u, %u", pos, MAX_POS/4, MAX_POS/2, 3*MAX_POS/4, MAX_POS);
-
-        if (pos >= MAX_POS) {
-            pos = 0;
-        }
+    if (pos >= MAX_POS) {
+        pos = 0;
         // one loop more
         move_count++;
         if (move_count >= (MAX_POS - 1)) {
             move_count = 0;
-            pos = 0;
             cycle_count++;
         }
-        // write main state
     }
+    // write main state...
 
     ESP_LOGD(TAG, "%s - access_count= 0x%08x, pos= 0x%08x, move_count= 0x%08x", __func__, (uint32_t) access_count, (uint32_t) pos, (uint32_t) move_count); 
     return result;
@@ -132,53 +127,10 @@ void print_vars()
     ESP_LOGI(TAG, "cycle_count = %u", cycle_count);
     ESP_LOGI(TAG, "restarted = %lu", restarted);
 }
-
-#if 0
-int main()
+ 
+void print_reconstructed()
 {
-    srand(time(0));
-
-    ESP_LOGI(TAG,"FULL_MEM_SIZE = %u (0x%x)", FULL_MEM_SIZE, FULL_MEM_SIZE);
-    ESP_LOGI(TAG,"FLASH_SIZE = %u (0x%x)", FLASH_SIZE, FLASH_SIZE);
-    ESP_LOGI(TAG,"MAX_POS = %u (0x%x)", MAX_POS, MAX_POS);
-    ESP_LOGI(TAG,"MAX_POS - 1 = %u => * SECTOR_SIZE (%u) = %u", MAX_POS-1, SECTOR_SIZE, (MAX_POS-1)*SECTOR_SIZE);
-
-#define RANDOM false
-#define RESTART_PROBABILITY 1 // restart after each erase, in percent
-#define ITERATIONS (100000)
-#define ERASE_ADDRESS (FLASH_SIZE/3)
-#define ERASE_SIZE (0x10)
-
-    ESP_LOGI(TAG,"===== SETUP =====");
-    ESP_LOGI(TAG,"iterations: %u", ITERATIONS);
-#if RANDOM
-    ESP_LOGI(TAG,"erase_address RANDOMIZED");
-#else
-    ESP_LOGI(TAG,"erase_address: 0x%x", ERASE_ADDRESS);
-#endif
-    ESP_LOGI(TAG,"erase_size: 0x%x", ERASE_SIZE);
-
-    for (size_t i = 0; i < ITERATIONS; i++) {
-#if !RANDOM
-        erase_range(ERASE_ADDRESS, ERASE_SIZE);
-#else
-        int address = rand() % ERASE_ADDRESS;
-        int size = rand() % ERASE_SIZE + 1;
-        erase_range(address, size);
-
-        int restart_prob = rand() % 1000;
-        if (restart_prob < RESTART_PROBABILITY) {
-            access_count = 0;
-            restarted++;
-        }
-#endif
-    }
-
-    print_erase_count();
-    print_vars();
-
-    ESP_LOGI(TAG,"===== ANALYSIS =====");
-    ESP_LOGI(TAG,"===== INCORRENT NUMBERS AS MC INCREMENTED MORE OFTEN =====");
+    ESP_LOGI(TAG,"===== RECONSTRUCT =====");
 
     size_t dummy_addr = pos * PAGE_SIZE;
     ESP_LOGI(TAG,"dummy_addr: 0x%lx", dummy_addr);
@@ -186,18 +138,11 @@ int main()
     size_t resolution = (MAX_POS - 1) * UPDATERATE;
     ESP_LOGI(TAG,"resolution: 0x%lx (%ld)", resolution, resolution);
 
-    ESP_LOGI(TAG,"last erase at %lu", last_erase_sector);
-
-    ESP_LOGI(TAG,"number of sectors at resolution erases == move count");
-
     auto erase_from_pos = pos * UPDATERATE;
     auto erase_from_mc = move_count * MAX_POS * UPDATERATE + erase_from_pos;
     auto erase_from_cc = cycle_count * MAX_POS * (MAX_POS-1) * UPDATERATE + erase_from_mc;
 
     ESP_LOGI(TAG,"erase count from mc&pos: %ld", erase_from_mc);
-
     ESP_LOGI(TAG,"erase count including cycle_count: %ld", erase_from_cc);
-
-    return 0;
 }
-#endif
+

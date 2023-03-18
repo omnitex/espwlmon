@@ -6,6 +6,7 @@
 esp_err_t erase_range(size_t start_address, size_t size);
 void print_erase_counts();
 void print_vars();
+void print_reconstructed();
 
 #endif
 
