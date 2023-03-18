@@ -27,9 +27,9 @@ size_t calcAddr(size_t addr)
     return result;
 }
 
-int updateWL()
+esp_err_t updateWL()
 {
-    int result = ESP_OK;
+    esp_err_t result = ESP_OK;
 
     access_count++;
     if (access_count < MAX_COUNT) {
@@ -63,9 +63,9 @@ int updateWL()
     return result;
 }
 
-int erase_sector(size_t sector)
+esp_err_t erase_sector(size_t sector)
 {
-    int result = ESP_OK;
+    esp_err_t result = ESP_OK;
 
     updateWL();
     size_t virt_addr = calcAddr(sector * SECTOR_SIZE);
@@ -80,9 +80,9 @@ int erase_sector(size_t sector)
     return result;
 }
 
-int erase_range(size_t start_address, size_t size)
+esp_err_t erase_range(size_t start_address, size_t size)
 {
-    int result = ESP_OK;
+    esp_err_t result = ESP_OK;
 
 
     size_t erase_count = (size + SECTOR_SIZE - 1) / SECTOR_SIZE;
@@ -101,7 +101,6 @@ void print_erase_counts()
 {
     uint64_t sum = 0;
     uint32_t min = UINT32_MAX, max = 0, nonzeros = 0;
-
 
     ESP_LOGI(TAG, "===== RESULTS =====");
     for (size_t i = 0; i <= SECTOR_COUNT; i++) {

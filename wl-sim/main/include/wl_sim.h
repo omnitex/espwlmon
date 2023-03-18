@@ -1,6 +1,8 @@
 #ifndef __WL_SIM_H__
 #define __WL_SIM_H__
 
+#include <cstdint>
+
 // following values copied from what WLmon_Flash reconstructed
 #define FULL_MEM_SIZE 0x100000 // 1MB
 #define SECTOR_SIZE (2<<11) // 4KB
