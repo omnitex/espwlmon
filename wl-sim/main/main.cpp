@@ -18,7 +18,7 @@ extern size_t access_count;
 
 #define ITERATIONS 1000000
 
-#define RESTART_PROBABILITY 1 // restart after each erase, in percent
+#define RESTART_PROBABILITY 1 // restart after each erase, in per mille
 #define ERASE_SIZE (0x100)
 
 #define USED_DISTRIBUTION "undetermined erase distribution"
@@ -41,8 +41,7 @@ int main()
 
 
     for (size_t i = 0; i < ITERATIONS; i++) {
-
-        erase_range(ADDRESS_FUNCTION(FLASH_SIZE), ERASE_SIZE);
+        erase_range(ADDRESS_FUNCTION(FLASH_SIZE) + (i % 16) * SECTOR_SIZE, ERASE_SIZE);
 
 #if 0
         // simulated device hard restart, current access count is lost without a pos update record
