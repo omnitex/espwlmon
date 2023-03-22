@@ -13,9 +13,88 @@ uint32_t erase_count[SECTOR_COUNT + 1] = {0};
 size_t last_erase_sector = 0;
 size_t restarted = 0;
 
+// key_len is half of bit length of address space
+// so 8bit key is for (up to) 16bit address space
+// 65K sectors is plenty: up to 32MB of 512B sectors
+// or 256MB of 4K sectors
+uint8_t keys[3] = {0};
+uint8_t B = 0;
+
+void init_feistel()
+{
+    uint16_t sector_count = SECTOR_COUNT;
+    ESP_LOGI(TAG, "%s: N=%u", __func__, sector_count);
+    ESP_LOGI(TAG, "sizeof(size_t)=%u", sizeof(size_t));
+
+    // B = log2(sector_count)
+    for (B = 0; sector_count; B++)
+        sector_count >>= 1;
+
+    // make B even for splitting addr to 2 parts nicely
+    if (B % 2 != 0) {
+        ESP_LOGI(TAG, "%s: aligning B to be even %u => %u", __func__, B, B+1);
+        B++;
+    }
+
+    ESP_LOGI(TAG, "%s: B=%u", __func__, B);
+
+    uint8_t key_len = B/2;
+
+    ESP_LOGI(TAG, "%s: key_len=%u", __func__, key_len);
+
+    for (auto i = 0; i < 3; i++)
+        keys[i] = rand() % UINT8_MAX;
+
+    ESP_LOGI(TAG, "%s: generated 8bit keys (%u, %u, %u) ", __func__, keys[0], keys[1], keys[2]);
+
+}
+
+//TODO can this be uint8_t ?
+static uint32_t feistel_function(uint32_t L, uint32_t key)
+{
+    return (L ^ key) * (L ^ key);
+}
+
+static size_t feistel_network(size_t logical_addr)
+{
+    size_t sector_addr = logical_addr / SECTOR_SIZE;
+    ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, logical_addr, sector_addr);
+
+    //               |       B       |
+    //               |<-B/2->|<-B/2->|
+    // logical_addr: |   L   |   R   |
+
+    size_t R_mask = ~( (~(size_t)0) << B/2);
+
+    size_t L = sector_addr >> B/2;
+    size_t R = sector_addr & R_mask;
+    size_t _L, _R;
+
+    ESP_LOGD(TAG, "%s: L=0x%x R=0x%x", __func__, L, R);
+
+    for (auto i = 0; i < 3; i++) {
+        // stage i
+        _L = L;
+        _R = (R ^ feistel_function(L, keys[i])) & R_mask;
+        // swap
+        L = _R;
+        R = _L;
+    }
+    size_t randomized_addr = (L << B/2) | R;
+    ESP_LOGD(TAG, "%s: randomized_addr=0x%x", __func__, randomized_addr);
+
+    return randomized_addr * SECTOR_SIZE;
+}
+
 size_t calcAddr(size_t addr)
 {
-    size_t result = (FLASH_SIZE - move_count * PAGE_SIZE + addr) % FLASH_SIZE;
+#if 1
+    size_t intermediate_addr = feistel_network(addr);
+#else
+    size_t intermediate_addr = addr;
+#endif
+
+    size_t result = (FLASH_SIZE - move_count * PAGE_SIZE + intermediate_addr) % FLASH_SIZE;
     size_t dummy_addr = pos * PAGE_SIZE;
 
     if (result < dummy_addr) {
@@ -23,7 +102,7 @@ size_t calcAddr(size_t addr)
         result += PAGE_SIZE;
     }
 
-    ESP_LOGD(TAG, "%s - addr= 0x%08x -> result= 0x%08x, dummy_addr= 0x%08x", __func__, (uint32_t) addr, (uint32_t) result, (uint32_t)dummy_addr); 
+    ESP_LOGV(TAG, "%s - addr= 0x%08x -> result= 0x%08x, dummy_addr= 0x%08x", __func__, (uint32_t) addr, (uint32_t) result, (uint32_t)dummy_addr); 
     return result;
 }
 
@@ -33,7 +112,7 @@ esp_err_t updateWL()
 
     access_count++;
     if (access_count < MAX_COUNT) {
-        ESP_LOGD(TAG, "%s EARLY RETURN - access_count= 0x%08x, pos= 0x%08x, move_count= 0x%08x", __func__, (uint32_t) access_count, (uint32_t) pos, (uint32_t) move_count); 
+        ESP_LOGV(TAG, "%s EARLY RETURN - access_count= 0x%08x, pos= 0x%08x, move_count= 0x%08x", __func__, (uint32_t) access_count, (uint32_t) pos, (uint32_t) move_count); 
         return result;
     }
 
@@ -71,7 +150,7 @@ esp_err_t erase_sector(size_t sector)
     size_t virt_addr = calcAddr(sector * SECTOR_SIZE);
     size_t phy_sector = virt_addr / SECTOR_SIZE;
 
-    ESP_LOGD(TAG, "%s - virt_addr= 0x%08x, phy_sector= 0x%08x", __func__, (uint32_t) virt_addr, (uint32_t) phy_sector);
+    ESP_LOGV(TAG, "%s - virt_addr= 0x%08x, phy_sector= 0x%08x", __func__, (uint32_t) virt_addr, (uint32_t) phy_sector);
 
     erase_count[phy_sector]++;
 
