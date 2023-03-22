@@ -7,7 +7,7 @@
 
 size_t constant(size_t max_addr);
 size_t uniform(size_t max_addr);
-
+size_t zipf(size_t max_addr);
 
 #endif
 

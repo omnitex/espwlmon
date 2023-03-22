@@ -13,14 +13,14 @@ extern size_t access_count;
 
 //TODO parameters like this or arguments? or file?
 
-// {constant,uniform}
-#define ADDRESS_FUNCTION constant
+// {constant,uniform,zipf}
+#define ADDRESS_FUNCTION zipf
 // {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
 #define ZERO_ADDR 0
 // {0,1} enable feistel network address randomization
-#define FEISTEL 0
+#define FEISTEL 1
 // number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
-#define ITERATIONS 20000000
+#define ITERATIONS 25000000
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
 // block size of consecutive sectors erased in main loop
