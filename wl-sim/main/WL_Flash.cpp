@@ -1,3 +1,4 @@
+#include <cmath>
 #include "esp_log.h"
 #include "esp_err.h"
 
@@ -19,9 +20,13 @@ size_t restarted = 0;
 // or 256MB of 4K sectors
 uint8_t keys[3] = {0};
 uint8_t B = 0;
+uint32_t feistel_calls = 0;
+static bool feistel = false;
 
 void init_feistel()
 {
+    feistel = true;
+
     uint16_t sector_count = SECTOR_COUNT;
     ESP_LOGI(TAG, "%s: N=%u", __func__, sector_count);
     ESP_LOGI(TAG, "sizeof(size_t)=%u", sizeof(size_t));
@@ -52,11 +57,15 @@ void init_feistel()
 //TODO can this be uint8_t ?
 static uint32_t feistel_function(uint32_t L, uint32_t key)
 {
+    ESP_LOGV(TAG, "%s: L=0x%x key=0x%x", __func__, L, key);
+    ESP_LOGV(TAG, "%s: L xor key = 0x%x", __func__, (L ^ key));
+    ESP_LOGV(TAG, "%s: return (L xor key)^2 = 0x%x", __func__, (L ^ key)*(L ^ key));
     return (L ^ key) * (L ^ key);
 }
 
 static size_t feistel_network(size_t logical_addr)
 {
+    feistel_calls++;
     size_t sector_addr = logical_addr / SECTOR_SIZE;
     ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, logical_addr, sector_addr);
 
@@ -76,9 +85,11 @@ static size_t feistel_network(size_t logical_addr)
         // stage i
         _L = L;
         _R = (R ^ feistel_function(L, keys[i])) & R_mask;
+        ESP_LOGV(TAG, "%s: before swap: _L=0x%x _R=0x%x", __func__, _L, _R);
         // swap
         L = _R;
         R = _L;
+        ESP_LOGV(TAG, "%s: after swap: L=0x%x R=0x%x", __func__, L, R);
     }
     size_t randomized_addr = (L << B/2) | R;
     ESP_LOGD(TAG, "%s: randomized_addr=0x%x", __func__, randomized_addr);
@@ -88,11 +99,9 @@ static size_t feistel_network(size_t logical_addr)
 
 size_t calcAddr(size_t addr)
 {
-#if 1
-    size_t intermediate_addr = feistel_network(addr);
-#else
     size_t intermediate_addr = addr;
-#endif
+    if (feistel)
+        intermediate_addr = feistel_network(addr);
 
     size_t result = (FLASH_SIZE - move_count * PAGE_SIZE + intermediate_addr) % FLASH_SIZE;
     size_t dummy_addr = pos * PAGE_SIZE;
@@ -176,7 +185,7 @@ esp_err_t erase_range(size_t start_address, size_t size)
     return result;
 }
 
-void print_erase_counts()
+void print_erase_counts(bool verbose)
 {
     uint64_t sum = 0;
     uint32_t min = UINT32_MAX, max = 0, nonzeros = 0;
@@ -185,7 +194,9 @@ void print_erase_counts()
     for (size_t i = 0; i <= SECTOR_COUNT; i++) {
         uint32_t count = erase_count[i];
         if (count != 0) {
-            ESP_LOGI(TAG,"%ld: {%d}", i, count);
+            if (verbose) {
+                ESP_LOGI(TAG,"%ld: {%d}", i, count);
+            }
             sum += count;
             nonzeros++;
 
@@ -193,7 +204,21 @@ void print_erase_counts()
             if (count > max) max = count;
         }
     }
-    ESP_LOGI(TAG, "MIN: %u\tMAX: %u\tAVG: %lu", min, max, sum/nonzeros);
+    auto mean = sum/nonzeros;
+
+    // standard deviation and variance
+    sum = 0;
+    for (auto i = 0; i <= SECTOR_COUNT; i++) {
+        uint32_t count = erase_count[i];
+        if (count != 0) {
+           sum += (count - mean) * (count - mean);
+        }
+    }
+    // TODO sample v population? nonzeros are just a sample from all, right?
+    // if nonzeros == 1 can't do -1 for sample
+    double var = sum / (nonzeros);
+    double dev = std::sqrt(var);
+    ESP_LOGI(TAG, "MIN: %u\tMAX: %u\tMEAN: %lu\tVAR: %f\tDEV: %f", min, max, mean, var, dev);
 }
 
 void print_vars()
@@ -204,6 +229,8 @@ void print_vars()
     ESP_LOGI(TAG, "move_count = %lu", move_count);
     ESP_LOGI(TAG, "cycle_count = %u", cycle_count);
     ESP_LOGI(TAG, "restarted = %lu", restarted);
+    if (feistel)
+        ESP_LOGI(TAG, "feistel_calls = %lu", feistel_calls);
 }
  
 void print_reconstructed()

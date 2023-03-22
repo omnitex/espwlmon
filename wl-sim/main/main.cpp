@@ -15,37 +15,38 @@ extern size_t access_count;
 
 // {constant,uniform}
 #define ADDRESS_FUNCTION constant
-
-#define ITERATIONS 25000000
+// {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
+#define ZERO_ADDR 0
+// {0,1} enable feistel network address randomization
+#define FEISTEL 0
+// number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
+#define ITERATIONS 20000000
+// {0,1} enable per sector verbose erase count logs
+#define VERBOSE_ERASE_COUNTS 0
+// block size of consecutive sectors erased in main loop
+#define ERASE_BLOCK 16
 
 #define RESTART_PROBABILITY 1 // restart after each erase, in per mille
 #define ERASE_SIZE (0x100)
 
-// TODO this does not work!
-#define USED_DISTRIBUTION "undetermined erase distribution"
-#if ADDRESS_FUNCTION == constant
-#undef USED_DISTRIBUTION
-#define USED_DISTRIBUTION "constant erase distribution"
-#endif
-#if ADDRESS_FUNCTION == uniform
-#undef USED_DISTRIBUTION
-#define USED_DISTRIBUTION "uniform erase distribution"
-#endif
-
 int main()
 {
     srand(time(0));
+
+#if FEISTEL == 1
     init_feistel();
+#endif
 
     ESP_LOGI(TAG, "===== SETUP =====");
     ESP_LOGI(TAG, "iterations: %u", ITERATIONS);
-    //ESP_LOGI(TAG, USED_DISTRIBUTION);
-
+    ESP_LOGI(TAG, "erase block: %u", ERASE_BLOCK);
 
     for (size_t i = 0; i < ITERATIONS; i++) {
-        erase_range(ADDRESS_FUNCTION(FLASH_SIZE) + (i % 16) * SECTOR_SIZE, ERASE_SIZE);
-        //erase_range(ADDRESS_FUNCTION(FLASH_SIZE) + (i % 8) * SECTOR_SIZE, ERASE_SIZE);
-        //erase_range(ADDRESS_FUNCTION(FLASH_SIZE), ERASE_SIZE);
+#if ERASE_BLOCK == 1
+        erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE);
+#else
+        erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR) + (i % ERASE_BLOCK) * SECTOR_SIZE, ERASE_SIZE);
+#endif
 
 #if 0
         // simulated device hard restart, current access count is lost without a pos update record
@@ -58,7 +59,7 @@ int main()
 
     }
 
-    print_erase_counts();
+    print_erase_counts(VERBOSE_ERASE_COUNTS);
     print_vars();
     print_reconstructed();
 
