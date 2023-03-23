@@ -6,6 +6,8 @@
 
 static const char *TAG = "WL_Flash";
 
+#define SECTOR_ERASE_ENDURANCE 100000
+
 size_t access_count = 0;
 size_t pos = 0;
 size_t move_count = 0;
@@ -163,10 +165,20 @@ esp_err_t erase_sector(size_t sector)
 
     erase_count[phy_sector]++;
 
+    // reached maximum lifetime of a sector
+    // stop erasing and propagate to calculating normalized endurance (NE)
+    if (erase_count[phy_sector] >= SECTOR_ERASE_ENDURANCE) {
+        ESP_LOGI(TAG, "%s: sector %u reached %u", __func__, phy_sector, erase_count[phy_sector]);
+        return ESP_FAIL;
+    }
+
     last_erase_sector = phy_sector;
 
     return result;
 }
+
+// forward declaration
+void print_erase_counts(bool);
 
 esp_err_t erase_range(size_t start_address, size_t size)
 {
@@ -179,8 +191,13 @@ esp_err_t erase_range(size_t start_address, size_t size)
     ESP_LOGD(TAG, "%s - start_address= 0x%08x, size= 0x%08x, erase_count= 0x%08x, start_sector= 0x%08x",
             __func__, (uint32_t) start_address, (uint32_t) size, (uint32_t) erase_count, (uint32_t) start_sector); 
 
-    for (size_t i = 0; i < erase_count; i++)
-        erase_sector(start_sector + i);
+    for (size_t i = 0; i < erase_count; i++) {
+        result = erase_sector(start_sector + i);
+        if (result != ESP_OK) {
+            // will propagate fail return code
+            break;
+        }
+    }
 
     return result;
 }
@@ -204,6 +221,12 @@ void print_erase_counts(bool verbose)
             if (count > max) max = count;
         }
     }
+    // normalized endurance [%]
+    //       Total Writes Before System Failure
+    // NE = ------------------------------------ x 100%
+    //               Wmax x Num Sectors
+    double NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * SECTOR_COUNT)) * 100;
+
     auto mean = sum/nonzeros;
 
     // standard deviation and variance
@@ -219,6 +242,7 @@ void print_erase_counts(bool verbose)
     double var = sum / (nonzeros);
     double dev = std::sqrt(var);
     ESP_LOGI(TAG, "MIN: %u\tMAX: %u\tMEAN: %lu\tVAR: %f\tDEV: %f", min, max, mean, var, dev);
+    ESP_LOGI(TAG, "NE: %f", NE);
 }
 
 void print_vars()

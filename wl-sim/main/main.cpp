@@ -13,25 +13,28 @@ extern size_t access_count;
 
 //TODO parameters like this or arguments? or file?
 
-// {constant,uniform,zipf}
-#define ADDRESS_FUNCTION zipf
+// {constant,uniform,zipf,linear}
+#define ADDRESS_FUNCTION linear
 // {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
 #define ZERO_ADDR 0
 // {0,1} enable feistel network address randomization
-#define FEISTEL 1
+#define FEISTEL 0
 // number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
 #define ITERATIONS 25000000
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
 // block size of consecutive sectors erased in main loop
-#define ERASE_BLOCK 16
+#define ERASE_BLOCK 40
 
-#define RESTART_PROBABILITY 1 // restart after each erase, in per mille
+// restart after each erase range, in per mille
+// 0 disables random restarting
+#define RESTART_PROBABILITY 0
 #define ERASE_SIZE (0x100)
 
 int main()
 {
     srand(time(0));
+    esp_err_t result;
 
 #if FEISTEL == 1
     init_feistel();
@@ -43,12 +46,15 @@ int main()
 
     for (size_t i = 0; i < ITERATIONS; i++) {
 #if ERASE_BLOCK == 1
-        erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE);
+        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE);
 #else
-        erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR) + (i % ERASE_BLOCK) * SECTOR_SIZE, ERASE_SIZE);
+        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR) + (i % ERASE_BLOCK) * SECTOR_SIZE, ERASE_SIZE);
 #endif
 
-#if 0
+        if (result != ESP_OK)
+            break;
+
+#if RESTART_PROBABILITY != 0
         // simulated device hard restart, current access count is lost without a pos update record
         int restart_prob = rand() % 1000;
         if (restart_prob < RESTART_PROBABILITY) {
