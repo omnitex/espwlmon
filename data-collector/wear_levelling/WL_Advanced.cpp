@@ -29,11 +29,14 @@ WL_Advanced::~WL_Advanced()
 esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
 {
     esp_err_t result;
-    // configure base attributes
+    // configure attributes, calculates flash_size for base WL
+    // also allocated this->temp_buff
     result = WL_Flash::config(cfg, flash_drv);
     if (result != ESP_OK) {
         return result;
     }
+    // invalidate base config
+    this->configured = false;
 
     // need to allocate minimum 2 sectors for storing erase counts
     uint32_t flash_size_erase_counts = this->flash_size - 2 * this->cfg.sector_size;
@@ -43,12 +46,12 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     // | sector number 2B | erase count 2B | sn 2B | ec 2B | sn 2B | ec 2B | crc (of all previous fields) 4B |
     // count how many sector triplets will be saved + possible 1 or 2 sectors forming additional record; all groups will have 16B record
     // !!n, where n != 0, equals 1; so 1 or 2 additional sectors will add a single record
-    // size in bytes, not aligned in any way
+    // calculated size in bytes, not aligned in any way
     uint32_t erase_count_records_size = (sector_count / 3 + !!(sector_count % 3)) * sizeof(wl_erase_count_t);
     // count how many sectors will be needed to keep all records
     uint32_t erase_count_sectors = (erase_count_records_size + this->cfg.sector_size - 1) / this->cfg.sector_size;
 
-    ESP_LOGD(TAG, "%s: require %u B => %u sectors for erase count records", __func__, erase_count_records_size, erase_count_sectors);
+    ESP_LOGD(TAG, "%s: require %u B => %u sectors for one copy of erase count records", __func__, erase_count_records_size, erase_count_sectors);
 
     // size aligned to sectors, in bytes
     this->erase_count_records_size = erase_count_sectors * this->cfg.sector_size;
@@ -59,18 +62,118 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     this->addr_erase_counts1 = this->addr_state1 - 2 * this->erase_count_records_size;
     this->addr_erase_counts2 = this->addr_state1 - this->erase_count_records_size;
 
+    ESP_LOGD(TAG, "%s: new flash_size=0x%x, addr_erase_counts1=0x%x, addr_erase_counts2=0x%x",
+            __func__, this->flash_size, this->addr_erase_counts1, this->addr_erase_counts2);
+
+    this->configured = true;
     return ESP_OK;
 }
 
 esp_err_t WL_Advanced::init()
 {
-    // base init() needed for making this->state.max_pos accessible
-    esp_err_t result = WL_Flash::init();
-    if (result != ESP_OK) {
-        return result;
+    esp_err_t result = ESP_OK;
+
+    if (this->configured == false) {
+        ESP_LOGW(TAG, "%s: not configured, call config() first", __func__);
+        return ESP_ERR_INVALID_STATE;
     }
 
-    this->erase_count_buffer_size = this->state.max_pos * sizeof(uint16_t);
+    this->initialized = false;
+
+    wl_advanced_state_t *state_main = (wl_advanced_state_t *)&this->state;
+    wl_advanced_state_t _state_copy;
+    wl_advanced_state_t *state_copy = &_state_copy;
+
+    result = this->flash_drv->read(this->addr_state1, state_main, sizeof(wl_advanced_state_t));
+    result |= this->flash_drv->read(this->addr_state2, state_copy, sizeof(wl_advanced_state_t));
+    WL_RESULT_CHECK(result);
+
+    uint32_t crc1 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)state_main, offsetof(wl_advanced_state_t, crc));
+    uint32_t crc2 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)state_copy, offsetof(wl_advanced_state_t, crc));
+
+     ESP_LOGD(TAG, "%s: max_count=%i, move_count=0x%x, cycle_count=0x%x",
+            __func__,
+            state_main->max_count,
+            state_main->move_count,
+            state_main->cycle_count);
+
+    if ((crc1 == state_main->crc) && (crc2 == state_copy->crc)) {
+        // states are individually valid
+        if (crc1 != crc2) {
+            // second copy was not updated, rewrite it based on main
+            result = this->flash_drv->erase_range(this->addr_state2, this->state_size);
+            WL_RESULT_CHECK(result);
+            result = this->flash_drv->write(this->addr_state2, state_main, sizeof(wl_advanced_state_t));
+            WL_RESULT_CHECK(result);
+
+            // TODO cycle boundary
+            // copy pos update records as well
+            for (uint32_t i = 0; i < state_main->max_pos; i++) {
+                // read pos update record
+                result = this->flash_drv->read(this->addr_state1 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                WL_RESULT_CHECK(result);
+                // check it is valid
+                if (this->OkBuffSet(i) == true) {
+                    // if so, write it as second copy
+                    result = this->flash_drv->write(this->addr_state2 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                    WL_RESULT_CHECK(result);
+                }
+            }
+        }
+
+        ESP_LOGV(TAG, "%s: both state CRC checks OK", __func__);
+        // here both copies of states and records should be valid
+        result = this->recoverPos();
+        WL_RESULT_CHECK(result);
+    } else if ((crc1 != state_main->crc) && (crc2 != state_copy->crc)) {
+        // both CRCs invalid => new instance of WL
+        result = this->initSections();
+        WL_RESULT_CHECK(result);
+        result = this->recoverPos();
+        WL_RESULT_CHECK(result);
+    } else {
+        // recover broken state (one CRC invalid)
+        if (crc1 == state_main->crc) {
+            // state main valid, rewrite copy
+            this->flash_drv->erase_range(this->addr_state2, this->state_size);
+            WL_RESULT_CHECK(result);
+            this->flash_drv->write(this->addr_state2, state_main, sizeof(wl_advanced_state_t));
+            WL_RESULT_CHECK(result);
+
+            for (uint32_t i = 0; i < state_main->max_pos; i++) {
+                // read pos update record
+                result = this->flash_drv->read(this->addr_state1 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                WL_RESULT_CHECK(result);
+                // check it is valid
+                if (this->OkBuffSet(i) == true) {
+                    // if so, write it as second copy
+                    result = this->flash_drv->write(this->addr_state2 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                    WL_RESULT_CHECK(result);
+                }
+            }
+        } else {
+            // last case of only copy being valid => rewrite state main
+            this->flash_drv->erase_range(this->addr_state1, this->state_size);
+            WL_RESULT_CHECK(result);
+            this->flash_drv->write(this->addr_state1, state_copy, sizeof(wl_advanced_state_t));
+            WL_RESULT_CHECK(result);
+
+            for (uint32_t i = 0; i < state_copy->max_pos; i++) {
+                // read pos update record
+                result = this->flash_drv->read(this->addr_state2 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                WL_RESULT_CHECK(result);
+                // check it is valid
+                if (this->OkBuffSet(i) == true) {
+                    // if so, write it as second copy
+                    result = this->flash_drv->write(this->addr_state1 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+                    WL_RESULT_CHECK(result);
+                }
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "%s: pos=%u, max_pos=%u", __func__, state_main->pos, state_main->max_pos);
+    this->erase_count_buffer_size = state_main->max_pos * sizeof(uint16_t);
     this->erase_count_buffer = (uint16_t *)malloc(this->erase_count_buffer_size);
     if (this->erase_count_buffer == NULL) {
         return ESP_ERR_NO_MEM;
@@ -78,9 +181,37 @@ esp_err_t WL_Advanced::init()
     ESP_LOGI(TAG, "%s: allocated erase_count_buffer OK", __func__);
 
     // load existing erase counts to buffer
-    this->readEraseCounts();
+    result = this->readEraseCounts();
+    WL_RESULT_CHECK(result);
 
+    this->initialized = true;
     return ESP_OK;
+}
+
+esp_err_t WL_Advanced::recoverPos()
+{
+    esp_err_t result = ESP_OK;
+
+    uint32_t position = 0;
+
+    for (uint32_t i = 0; i < this->state.max_pos; i++) {
+        position = i;
+        result = this->flash_drv->read(this->addr_state1 + sizeof(wl_advanced_state_t) + i * this->cfg.wr_size, this->temp_buff, this->cfg.wr_size);
+        WL_RESULT_CHECK(result);
+        if (this->OkBuffSet(i) == false) {
+            // found invalid record => found position
+            break;
+        }
+    }
+
+    this->state.pos = position;
+    if (this->state.pos == this->state.max_pos) {
+        this->state.pos--;
+    }
+
+    ESP_LOGV(TAG, "%s: recovered %u", __func__, this->state.pos);
+
+    return result;
 }
 
 void WL_Advanced::fillOkBuff(int n)
@@ -213,7 +344,7 @@ esp_err_t WL_Advanced::readEraseCounts()
 
         uint32_t crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
         if (crc != erase_count_buff->crc) {
-            // ignore invalid record ?
+            // TODO ignore invalid record ?
             continue;
         }
 
@@ -293,6 +424,8 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
         return result;
     }
 
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+
     this->state.pos++;
     if (this->state.pos >= this->state.max_pos) {
         this->state.pos = 0;
@@ -304,11 +437,13 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
             // keep the information about passed cycle by incrementing cycle_count
             // this will NEVER be zeroed, thus allowing approximate calculation of total number of erases
             // and from that an estimate of sector wear-out
-            this->state.cycle_count++;
+            advanced_state->cycle_count++;
+            //this->state.cycle_count++;
         }
         // write main state
         this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, WL_STATE_CRC_LEN_V2);
 
+        // tally up overall per sector erase counts and save updated values to flash
         this->updateEraseCounts();
 
         result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
@@ -319,7 +454,7 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
         WL_RESULT_CHECK(result);
         result = this->flash_drv->write(this->addr_state2, &this->state, sizeof(wl_state_t));
         WL_RESULT_CHECK(result);
-        ESP_LOGD(TAG, "%s - cycle_count= 0x%08x, move_count= 0x%08x, pos= 0x%08x, ", __func__, this->state.cycle_count, this->state.move_count, this->state.pos);
+        ESP_LOGD(TAG, "%s - cycle_count= 0x%08x, move_count= 0x%08x, pos= 0x%08x, ", __func__, advanced_state->cycle_count, this->state.move_count, this->state.pos);
     }
     // Save structures to the flash... and check result
     if (result == ESP_OK) {
@@ -335,6 +470,7 @@ esp_err_t WL_Advanced::initSections()
 {
     esp_err_t result = ESP_OK;
 
+    // base initSections() works with wl_state_t and memsets reserved to 0
     result = WL_Flash::initSections();
     WL_RESULT_CHECK(result);
 
@@ -343,6 +479,18 @@ esp_err_t WL_Advanced::initSections()
     result = this->flash_drv->erase_range(this->addr_erase_counts2, this->erase_count_records_size);
     WL_RESULT_CHECK(result);
 
+    return result;
+}
+
+size_t WL_Advanced::calcAddr(size_t addr)
+{
+    size_t result = (this->flash_size - this->state.move_count * this->cfg.page_size + addr) % this->flash_size;
+    size_t dummy_addr = this->state.pos * this->cfg.page_size;
+    if (result < dummy_addr) {
+    } else {
+        result += this->cfg.page_size;
+    }
+    ESP_LOGV(TAG, "%s - addr= 0x%08x -> result= 0x%08x, dummy_addr= 0x%08x", __func__, (uint32_t) addr, (uint32_t) result, (uint32_t)dummy_addr);
     return result;
 }
 
@@ -373,6 +521,8 @@ esp_err_t WL_Advanced::flush()
     // is actually a realistic approach
     result = this->updateWL(this->state.pos);
 
-    ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, this->state.cycle_count, this->state.move_count);
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+
+    ESP_LOGD(TAG, "%s - result= 0x%08x, cycle_count=0x%08x, move_count= 0x%08x", __func__, result, advanced_state->cycle_count, advanced_state->move_count);
     return result;
 }
