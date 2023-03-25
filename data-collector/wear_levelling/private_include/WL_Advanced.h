@@ -13,7 +13,8 @@ typedef struct WL_Advanced_State_s {
     uint32_t version;       /*!< state id used to identify the version of current library implementation*/
     uint32_t device_id;     /*!< ID of current WL instance*/
     uint32_t cycle_count;   /*!< move_count zeroing counter. Used to calculate approximate memory wear, together with pos and move_count */
-    uint32_t reserved[6];   /*!< Reserved space for future use*/
+    uint32_t feistel_keys;  /*!< bit-packed 8bit keys for Feistel network address randomization */
+    uint32_t reserved[5];   /*!< Reserved space for future use*/
     uint32_t crc;           /*!< CRC of structure*/
 } wl_advanced_state_t;
 
@@ -44,7 +45,7 @@ protected:
 
     virtual esp_err_t updateEraseCounts();
     virtual esp_err_t readEraseCounts();
-
+    virtual size_t addressFeistelNetwork(size_t addr);
 
     esp_err_t config(wl_config_t *cfg, Flash_Access *flash_drv);
     esp_err_t updateWL(size_t sector);

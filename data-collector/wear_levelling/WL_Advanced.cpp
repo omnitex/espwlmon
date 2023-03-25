@@ -6,6 +6,7 @@
 #include "crc32.h"
 
 static const char *TAG = "wl_advanced";
+static uint8_t feistel_bit_width;
 #ifndef WL_CFG_CRC_CONST
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif // WL_CFG_CRC_CONST
@@ -91,11 +92,15 @@ esp_err_t WL_Advanced::init()
     uint32_t crc1 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)state_main, offsetof(wl_advanced_state_t, crc));
     uint32_t crc2 = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)state_copy, offsetof(wl_advanced_state_t, crc));
 
-     ESP_LOGD(TAG, "%s: max_count=%i, move_count=0x%x, cycle_count=0x%x",
+    uint8_t *keys = (uint8_t *)&state_main->feistel_keys;
+    ESP_LOGD(TAG, "%s: max_count=%i, move_count=0x%x, cycle_count=0x%x, Feistel keys=(%u,%u,%u)",
             __func__,
             state_main->max_count,
             state_main->move_count,
-            state_main->cycle_count);
+            state_main->cycle_count,
+            keys[0],
+            keys[1],
+            keys[2]);
 
     if ((crc1 == state_main->crc) && (crc2 == state_copy->crc)) {
         // states are individually valid
@@ -106,7 +111,6 @@ esp_err_t WL_Advanced::init()
             result = this->flash_drv->write(this->addr_state2, state_main, sizeof(wl_advanced_state_t));
             WL_RESULT_CHECK(result);
 
-            // TODO cycle boundary
             // copy pos update records as well
             for (uint32_t i = 0; i < state_main->max_pos; i++) {
                 // read pos update record
@@ -178,7 +182,7 @@ esp_err_t WL_Advanced::init()
     if (this->erase_count_buffer == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "%s: allocated erase_count_buffer OK", __func__);
+    ESP_LOGD(TAG, "%s: allocated erase_count_buffer OK", __func__);
 
     // load existing erase counts to buffer
     result = this->readEraseCounts();
@@ -188,6 +192,7 @@ esp_err_t WL_Advanced::init()
     return ESP_OK;
 }
 
+// own recoverPos() needed to call WL_Advanced::OkBuffSet() as it implements different logic
 esp_err_t WL_Advanced::recoverPos()
 {
     esp_err_t result = ESP_OK;
@@ -286,7 +291,7 @@ esp_err_t WL_Advanced::updateEraseCounts()
         if (this->erase_count_buffer[sector] != 0) {
             ESP_LOGD(TAG, "%s: non zero erase count of sector %u => %u", __func__, sector, erase_count_buffer[sector]);
 
-            // clear bufffer for assembling new triplet
+            // clear buffer for assembling new triplet
             if (pair_index == 0) {
                 memset(this->temp_buff, 0, this->cfg.temp_buff_size);
             }
@@ -361,6 +366,8 @@ esp_err_t WL_Advanced::readEraseCounts()
             erase_count_buff->pairs[1].sector, erase_count_buff->pairs[1].erase_count,
             erase_count_buff->pairs[2].sector, erase_count_buff->pairs[2].erase_count);
     }
+
+    ESP_LOGI(TAG, "%s: loaded erase counts to buffer", __func__);
 
     return result;
 }
@@ -438,7 +445,6 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
             // this will NEVER be zeroed, thus allowing approximate calculation of total number of erases
             // and from that an estimate of sector wear-out
             advanced_state->cycle_count++;
-            //this->state.cycle_count++;
         }
         // write main state
         this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, WL_STATE_CRC_LEN_V2);
@@ -465,25 +471,72 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     return result;
 }
 
-//TODO cycle count also in here?
 esp_err_t WL_Advanced::initSections()
 {
     esp_err_t result = ESP_OK;
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+    this->state.pos = 0;
+    this->state.access_count = 0;
+    this->state.move_count = 0;
+    // max count
+    this->state.max_count = this->flash_size / this->state_size * this->cfg.updaterate;
+    if (this->cfg.updaterate != 0) {
+        this->state.max_count = this->cfg.updaterate;
+    }
+    this->state.version = this->cfg.version;
+    this->state.block_size = this->cfg.page_size;
+    this->state.device_id = esp_random();
 
-    // base initSections() works with wl_state_t and memsets reserved to 0
-    result = WL_Flash::initSections();
+    advanced_state->cycle_count = 0;
+    // will use only 3B for 3 stage Feistel network with 8bit keys
+    advanced_state->feistel_keys = esp_random();
+
+    memset(advanced_state->reserved, 0, sizeof(advanced_state->reserved));
+
+    this->state.max_pos = 1 + this->flash_size / this->cfg.page_size;
+
+    this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, offsetof(wl_advanced_state_t, crc));
+
+    // states in two copies
+    result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_state1, &this->state, sizeof(wl_state_t));
+    WL_RESULT_CHECK(result);
+    // write state copy
+    result = this->flash_drv->erase_range(this->addr_state2, this->state_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_state2, &this->state, sizeof(wl_state_t));
     WL_RESULT_CHECK(result);
 
+    // config
+    result = this->flash_drv->erase_range(this->addr_cfg, this->cfg_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_cfg, &this->cfg, sizeof(wl_config_t));
+    WL_RESULT_CHECK(result);
+
+    // erase counts in two copies
     result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
     WL_RESULT_CHECK(result);
     result = this->flash_drv->erase_range(this->addr_erase_counts2, this->erase_count_records_size);
     WL_RESULT_CHECK(result);
 
+    uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
+    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u)", __func__, keys[0], keys[1], keys[2]);
+
     return result;
 }
 
+size_t WL_Advanced::addressFeistelNetwork(size_t addr)
+{
+    ESP_LOGD(TAG, "%s: sector_addr=%u", __func__, addr / this->cfg.sector_size);
+    return addr;
+}
+
+//TODO this version has to be called even from write and read!
 size_t WL_Advanced::calcAddr(size_t addr)
 {
+    size_t intermediate = this->addressFeistelNetwork(addr);
+
     size_t result = (this->flash_size - this->state.move_count * this->cfg.page_size + addr) % this->flash_size;
     size_t dummy_addr = this->state.pos * this->cfg.page_size;
     if (result < dummy_addr) {
