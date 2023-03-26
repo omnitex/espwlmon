@@ -32,6 +32,7 @@ protected:
     size_t addr_erase_counts2;
 
     virtual esp_err_t updateEraseCounts();
+    virtual esp_err_t writeEraseCounts(size_t erase_counts_addr);
     virtual esp_err_t readEraseCounts();
     virtual size_t addressFeistelNetwork(size_t addr);
     virtual uint32_t feistelFunction(uint32_t L, uint32_t key);

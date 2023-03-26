@@ -263,6 +263,70 @@ bool WL_Advanced::OkBuffSet(int pos)
     return true;
 }
 
+esp_err_t WL_Advanced::writeEraseCounts(size_t erase_counts_addr)
+{
+    if (erase_counts_addr != this->addr_erase_counts1 && erase_counts_addr != this->addr_erase_counts2) {
+        ESP_LOGE(TAG, "%s: erase counts address 0x%x is invalid", __func__, erase_counts_addr);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t result = ESP_OK;
+
+    wl_erase_count_t *erase_count_buff = (wl_erase_count_t *)this->temp_buff;
+    // for indexing (sector, erase count) pair in the array of 3 in wl_erase_count_t
+    uint8_t pair_index = 0;
+    // for indexing written wl_erase_count_t structures to flash
+    uint32_t erase_count_index = 0;
+
+    // erase sector(s) for storing first copy of updated erase counts
+    result = this->flash_drv->erase_range(erase_counts_addr, this->erase_count_records_size);
+    WL_RESULT_CHECK(result);
+
+    // save non zero erase counts to flash; here i == sector number as incrementing has been done in this manner
+    for (uint32_t i = 0; i < this->state.max_pos; i++) {
+        uint32_t sector = i;
+        if (this->erase_count_buffer[sector] != 0) {
+            ESP_LOGV(TAG, "%s: non zero erase count of sector %u => %u", __func__, sector, erase_count_buffer[sector]);
+
+            // clear buffer for assembling new triplet
+            if (pair_index == 0) {
+                memset(this->temp_buff, 0, this->cfg.temp_buff_size);
+            }
+
+            // save a pair of values to buffer
+            erase_count_buff->pairs[pair_index].sector = sector;
+            erase_count_buff->pairs[pair_index].erase_count = this->erase_count_buffer[sector];
+            pair_index++;
+
+            // if a triplet is assembled
+            if (pair_index >= 3) {
+                ESP_LOGV(TAG, "%s: triplet ready (sector %u out of %u) for write at index %u", __func__, sector, this->state.max_pos, erase_count_index);
+                erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
+                // write triplet with CRC to flash
+                result = this->flash_drv->write(erase_counts_addr + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
+                WL_RESULT_CHECK(result);
+                // for next triplet, move the index to next position
+                erase_count_index++;
+                // and reset indexing for next triplet
+                pair_index = 0;
+                ESP_LOGV(TAG, "%s: triplet written", __func__);
+            }
+
+        }
+    }
+
+    // if an incomplete pair is formed, write it also
+    if (pair_index > 0) {
+        ESP_LOGV(TAG, "%s: incomplete triplet for write at index %u", __func__, erase_count_index);
+        erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
+        result = this->flash_drv->write(this->addr_erase_counts1 + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
+        WL_RESULT_CHECK(result);
+        ESP_LOGV(TAG, "%s: incomplete triplet written", __func__);
+    }
+
+    return ESP_OK;
+}
+
 esp_err_t WL_Advanced::updateEraseCounts()
 {
     esp_err_t result = ESP_OK;
@@ -276,77 +340,30 @@ esp_err_t WL_Advanced::updateEraseCounts()
         if (this->OkBuffSet(i)) {
             // increment erase count, indexing by sector number
             this->erase_count_buffer[record_buff->sector]++;
-            ESP_LOGD(TAG, "%s: buffer OK at pos %u, sector %u++ => %u", __func__, i, record_buff->sector, this->erase_count_buffer[record_buff->sector]);
+            ESP_LOGV(TAG, "%s: buffer OK at pos %u, sector [%u]++ => %u", __func__, i, record_buff->sector, this->erase_count_buffer[record_buff->sector]);
         } else {
             ESP_LOGD(TAG, "%s: found pos at %i", __func__, i);
             break;
         }
     }
 
-    wl_erase_count_t *erase_count_buff = (wl_erase_count_t *)this->temp_buff;
-    // for indexing (sector, erase count) pair in the array of 3 in wl_erase_count_t
-    uint8_t pair_index = 0;
-    // for indexing written wl_erase_count_t structures to flash
-    uint32_t erase_count_index = 0;
-
-    // erase sector(s) for storing first copy of updated erase counts
-    result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
-    WL_RESULT_CHECK(result);
-
-    // save non zero erase counts to flash; here i == sector number as incrementing has been done in this manner
-    for (uint32_t i = 0; i < this->state.max_pos; i++) {
-        uint32_t sector = i;
-        if (this->erase_count_buffer[sector] != 0) {
-            ESP_LOGD(TAG, "%s: non zero erase count of sector %u => %u", __func__, sector, erase_count_buffer[sector]);
-
-            // clear buffer for assembling new triplet
-            if (pair_index == 0) {
-                memset(this->temp_buff, 0, this->cfg.temp_buff_size);
-            }
-
-            // save a pair of values to buffer
-            erase_count_buff->pairs[pair_index].sector = sector;
-            erase_count_buff->pairs[pair_index].erase_count = this->erase_count_buffer[sector];
-            pair_index++;
-
-            // if a triplet is assembled OR there won't be a full one
-            if (pair_index >= 3) {
-                ESP_LOGD(TAG, "%s: triplet ready (sector %u out of %u) for write at index %u", __func__, sector, this->state.max_pos, erase_count_index);
-                erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
-                // write triplet with CRC to flash
-                result = this->flash_drv->write(this->addr_erase_counts1 + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
-                WL_RESULT_CHECK(result);
-                // for next triplet, move the index to next position
-                erase_count_index++;
-                // and reset indexing for next triplet
-                pair_index = 0;
-                ESP_LOGD(TAG, "%s: triplet written", __func__);
-            }
-
-        }
-    }
-
-    // if an incomplete pair is formed, write it also
-    if (pair_index > 0) {
-        ESP_LOGD(TAG, "%s: incomplete triplet for write at index %u", __func__, erase_count_index);
-        erase_count_buff->crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
-        result = this->flash_drv->write(this->addr_erase_counts1 + erase_count_index * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
-        WL_RESULT_CHECK(result);
-        ESP_LOGD(TAG, "%s: incomplete triplet written", __func__);
-    }
-
-    //TODO second copy?
-
-    return ESP_OK;
+    return result;
 }
 
+// TODO same technique for keeping both copies OK as in init?
 esp_err_t WL_Advanced::readEraseCounts()
 {
     esp_err_t result = ESP_OK;
 
     wl_erase_count_t *erase_count_buff = (wl_erase_count_t *)this->temp_buff;
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
 
     memset(this->erase_count_buffer, 0, this->erase_count_buffer_size);
+
+    if (this->state.move_count == 0 && advanced_state->cycle_count == 0) {
+        ESP_LOGI(TAG, "%s: no erase counts in flash yet, as move_count=%u and cycle_count=%u", __func__, this->state.move_count, advanced_state->cycle_count);
+        return ESP_OK;
+    }
 
     // go through saved erase counts in flash in this format
     // | sector | erase count | sector | erase count | sector | erase count | crc |
@@ -356,9 +373,19 @@ esp_err_t WL_Advanced::readEraseCounts()
         WL_RESULT_CHECK(result);
 
         uint32_t crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
+
         if (crc != erase_count_buff->crc) {
-            // TODO ignore invalid record ?
-            continue;
+            ESP_LOGW(TAG, "%s: first copy of erase counts is invalid at pos %u", __func__, i);
+            // first copy has invalid CRC, check the second copy
+            result = this->flash_drv->read(this->addr_erase_counts2 + i * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
+            WL_RESULT_CHECK(result);
+
+            crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
+            if (crc != erase_count_buff->crc) {
+                ESP_LOGE(TAG, "%s: second copy also invalid at pos %u", __func__, i);
+                // also invalid, cannot recover
+                return ESP_ERR_INVALID_STATE;
+            }
         }
 
         // CRC of erase count record OK, save read erase counts to buffer
@@ -457,8 +484,27 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
         // write main state
         this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, WL_STATE_CRC_LEN_V2);
 
-        // tally up overall per sector erase counts and save updated values to flash
-        this->updateEraseCounts();
+        //TODO if either writeEraseCounts() fails, erase counts ARE NOT to be updated again
+        // before erasing at addr_state1/2, so just let it fail and continue?
+        // or somehow mark they have been updated?
+        // what about the spare uint16_t as there are only (max_pos-1) sectors?
+
+        // tally up overall per sector erase counts
+        result = this->updateEraseCounts();
+        // and write updated values to flash
+        result |= this->writeEraseCounts(this->addr_erase_counts1);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "%s - write erase counts 1. copy result=0x%x", __func__, result);
+            this->state.access_count = this->state.max_count - 1;
+            return result;
+        }
+        // also a second copy
+        result = this->writeEraseCounts(this->addr_erase_counts2);
+        if (result != ESP_OK) {
+            ESP_LOGE(TAG, "%s - write erase counts 2. copy result=0x%x", __func__, result);
+            this->state.access_count = this->state.max_count - 1;
+            return result;
+        }
 
         result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
         WL_RESULT_CHECK(result);
