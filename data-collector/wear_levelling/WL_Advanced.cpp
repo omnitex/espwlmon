@@ -184,6 +184,17 @@ esp_err_t WL_Advanced::init()
     }
     ESP_LOGD(TAG, "%s: allocated erase_count_buffer OK", __func__);
 
+    // calculate bits needed for sector addressing and in turn for Feistel network
+    uint32_t sector_count = this->flash_size / this->cfg.sector_size;
+    for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
+        sector_count >>= 1;
+
+    // make it even, so same bit halves can be manipulated in the network
+    if (feistel_bit_width % 2)
+        feistel_bit_width++;
+
+    ESP_LOGD(TAG, "%s: feistel_bit_width=%u", __func__, feistel_bit_width);
+
     // load existing erase counts to buffer
     result = this->readEraseCounts();
     WL_RESULT_CHECK(result);
@@ -219,9 +230,8 @@ esp_err_t WL_Advanced::recoverPos()
     return result;
 }
 
-void WL_Advanced::fillOkBuff(int n)
+void WL_Advanced::fillOkBuff(int sector)
 {
-    int sector = n;
     wl_sector_erase_record_t *record_buff = (wl_sector_erase_record_t *)this->temp_buff;
 
     size_t physical_sector = this->calcAddr(sector * this->cfg.sector_size) / this->cfg.sector_size;
@@ -235,10 +245,8 @@ void WL_Advanced::fillOkBuff(int n)
     ESP_LOGD(TAG, "%s: device_id=%u, pos=%u, sector=%u, crc=%u", __func__, record_buff->device_id, record_buff->pos, record_buff->sector, record_buff->crc);
 }
 
-bool WL_Advanced::OkBuffSet(int n)
+bool WL_Advanced::OkBuffSet(int pos)
 {
-    int pos = n;
-
     wl_sector_erase_record_t *record_buff = (wl_sector_erase_record_t *)this->temp_buff;
 
     if (record_buff->device_id != this->state.device_id)
@@ -381,7 +389,7 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     }
     // Here we have to move the block and increase the state
     this->state.access_count = 0;
-    ESP_LOGV(TAG, "%s - sector=%u, access_count= 0x%08x, pos= 0x%08x", __func__, sector, this->state.access_count, this->state.pos);
+    ESP_LOGV(TAG, "%s - sector=0x%x, access_count= 0x%08x, pos= 0x%08x", __func__, sector, this->state.access_count, this->state.pos);
     // copy data to dummy block
     size_t data_addr = this->state.pos + 1; // next block, [pos+1] copy to [pos]
     if (data_addr >= this->state.max_pos) {
@@ -521,29 +529,64 @@ esp_err_t WL_Advanced::initSections()
     WL_RESULT_CHECK(result);
 
     uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
-    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u)", __func__, keys[0], keys[1], keys[2]);
+    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u) for bit with %u", __func__, keys[0], keys[1], keys[2]);
 
     return result;
 }
 
-size_t WL_Advanced::addressFeistelNetwork(size_t addr)
+uint32_t WL_Advanced::feistelFunction(uint32_t L, uint32_t key)
 {
-    ESP_LOGD(TAG, "%s: sector_addr=%u", __func__, addr / this->cfg.sector_size);
-    return addr;
+    return (L ^ key) * (L ^ key);
 }
 
-//TODO this version has to be called even from write and read!
+size_t WL_Advanced::addressFeistelNetwork(size_t addr)
+{
+    uint32_t sector_addr = addr / this->cfg.sector_size;
+    ESP_LOGD(TAG, "%s: sector_addr=0x%x", __func__, sector_addr);
+
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+    uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
+
+    // sector address has feistel_bit_width (B)
+    // | sector address |
+    // |<-B/2->|<-B/2-> |
+    // |   L   |   R    |
+
+    // create bitmask for masking out right B/2 bits of sector address
+    uint32_t R_mask = ~( (~(uint32_t)0) << feistel_bit_width/2);
+
+    // initial sector address halves
+    uint32_t L = sector_addr >> feistel_bit_width/2;
+    uint32_t R = sector_addr & R_mask;
+    // temp variables for swapping halves
+    uint32_t _L, _R;
+
+    // 3 stage Feistel network for randomizing address based on generated feistel_keys
+    for (uint8_t i = 0; i < 3; i++) {
+        _L = L;
+        _R = (R ^ this->feistelFunction(L, keys[i])) & R_mask;
+        // swap
+        L = _R;
+        R = _L;
+    }
+
+    uint32_t randomized_sector_addr = (L << feistel_bit_width/2) | R;
+
+    return randomized_sector_addr * this->cfg.sector_size;
+}
+
 size_t WL_Advanced::calcAddr(size_t addr)
 {
-    size_t intermediate = this->addressFeistelNetwork(addr);
+    size_t intermediate_addr = this->addressFeistelNetwork(addr);
 
-    size_t result = (this->flash_size - this->state.move_count * this->cfg.page_size + addr) % this->flash_size;
+    size_t result = (this->flash_size - this->state.move_count * this->cfg.page_size + intermediate_addr) % this->flash_size;
     size_t dummy_addr = this->state.pos * this->cfg.page_size;
     if (result < dummy_addr) {
     } else {
         result += this->cfg.page_size;
     }
-    ESP_LOGV(TAG, "%s - addr= 0x%08x -> result= 0x%08x, dummy_addr= 0x%08x", __func__, (uint32_t) addr, (uint32_t) result, (uint32_t)dummy_addr);
+    ESP_LOGV(TAG, "%s - addr= 0x%08x, intermediate_addr=0x%08x -> result= 0x%08x, dummy_addr= 0x%08x",
+            __func__, (uint32_t) addr, (uint32_t)intermediate_addr, (uint32_t) result, (uint32_t)dummy_addr);
     return result;
 }
 
@@ -559,6 +602,45 @@ esp_err_t WL_Advanced::erase_sector(size_t sector)
     WL_RESULT_CHECK(result);
     size_t virt_addr = this->calcAddr(sector * this->cfg.sector_size);
     result = this->flash_drv->erase_sector((this->cfg.start_addr + virt_addr) / this->cfg.sector_size);
+    WL_RESULT_CHECK(result);
+    return result;
+}
+
+esp_err_t WL_Advanced::write(size_t dest_addr, const void *src, size_t size)
+{
+    esp_err_t result = ESP_OK;
+    if (!this->initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ESP_LOGD(TAG, "%s - dest_addr= 0x%08x, size= 0x%08x", __func__, (uint32_t) dest_addr, (uint32_t) size);
+    uint32_t count = (size - 1) / this->cfg.page_size;
+    for (size_t i = 0; i < count; i++) {
+        size_t virt_addr = this->calcAddr(dest_addr + i * this->cfg.page_size);
+        result = this->flash_drv->write(this->cfg.start_addr + virt_addr, &((uint8_t *)src)[i * this->cfg.page_size], this->cfg.page_size);
+        WL_RESULT_CHECK(result);
+    }
+    size_t virt_addr_last = this->calcAddr(dest_addr + count * this->cfg.page_size);
+    result = this->flash_drv->write(this->cfg.start_addr + virt_addr_last, &((uint8_t *)src)[count * this->cfg.page_size], size - count * this->cfg.page_size);
+    WL_RESULT_CHECK(result);
+    return result;
+}
+
+esp_err_t WL_Advanced::read(size_t src_addr, void *dest, size_t size)
+{
+    esp_err_t result = ESP_OK;
+    if (!this->initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    ESP_LOGD(TAG, "%s - src_addr= 0x%08x, size= 0x%08x", __func__, (uint32_t) src_addr, (uint32_t) size);
+    uint32_t count = (size - 1) / this->cfg.page_size;
+    for (size_t i = 0; i < count; i++) {
+        size_t virt_addr = this->calcAddr(src_addr + i * this->cfg.page_size);
+        ESP_LOGV(TAG, "%s - real_addr= 0x%08x, size= 0x%08x", __func__, (uint32_t) (this->cfg.start_addr + virt_addr), (uint32_t) size);
+        result = this->flash_drv->read(this->cfg.start_addr + virt_addr, &((uint8_t *)dest)[i * this->cfg.page_size], this->cfg.page_size);
+        WL_RESULT_CHECK(result);
+    }
+    size_t virt_addr_last = this->calcAddr(src_addr + count * this->cfg.page_size);
+    result = this->flash_drv->read(this->cfg.start_addr + virt_addr_last, &((uint8_t *)dest)[count * this->cfg.page_size], size - count * this->cfg.page_size);
     WL_RESULT_CHECK(result);
     return result;
 }
