@@ -9,5 +9,7 @@ void print_vars();
 void print_reconstructed();
 void init_feistel();
 
+size_t feistel_network(size_t logical_addr);
+
 #endif
 

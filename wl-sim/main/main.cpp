@@ -10,6 +10,7 @@ static const char *TAG = "wl-sim";
 
 extern size_t restarted;
 extern size_t access_count;
+extern size_t move_count;
 
 //TODO parameters like this or arguments? or file?
 
@@ -38,6 +39,51 @@ int main()
 
 #if FEISTEL == 1
     init_feistel();
+#endif
+
+// test that feistel indeed maps 1:1, that no two sectors map to the same one
+#if 1
+    init_feistel();
+
+    uint8_t occurences[SECTOR_COUNT] = {0};
+
+    ESP_LOGI(TAG, "FLASH_SIZE=0x%x", FLASH_SIZE);
+
+    size_t addr, sector_addr;
+
+    auto nonzeros = 0;
+    for (auto i = 0; i < SECTOR_COUNT; i++) {
+        addr = feistel_network(i*SECTOR_SIZE);
+
+        //addr = (FLASH_SIZE - move_count * PAGE_SIZE + addr) % FLASH_SIZE;
+        sector_addr = addr/SECTOR_SIZE;
+
+        //ESP_LOGI(TAG, "feistel(0x%x)=>0x%x", i, sector_addr);
+        if (sector_addr >= SECTOR_COUNT)
+            ESP_LOGE(TAG, "sector_addr=%u", sector_addr);
+        occurences[sector_addr]++;
+        nonzeros++;
+    }
+    ESP_LOGI(TAG, "sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
+    nonzeros = 0;
+
+    for (auto i = 0; i < SECTOR_COUNT; i++) {
+        if (occurences[i] != 0) {
+            nonzeros++;
+            if (occurences[i] > 1) {
+                ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
+            } else {
+                ESP_LOGI(TAG, "sector 0x%x occured %u times", i, occurences[i]);
+            }
+        } else if (occurences[i] == 0) {
+            ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
+        } else {
+            ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
+        }
+    }
+    ESP_LOGI(TAG, "sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
+
+    return 0;
 #endif
 
     ESP_LOGI(TAG, "===== SETUP =====");

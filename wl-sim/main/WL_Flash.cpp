@@ -65,7 +65,7 @@ static uint32_t feistel_function(uint32_t L, uint32_t key)
     return (L ^ key) * (L ^ key);
 }
 
-static size_t feistel_network(size_t logical_addr)
+size_t feistel_network(size_t logical_addr)
 {
     feistel_calls++;
     size_t sector_addr = logical_addr / SECTOR_SIZE;
