@@ -23,6 +23,7 @@ size_t restarted = 0;
 uint8_t keys[3] = {0};
 uint8_t B = 0;
 uint32_t feistel_calls = 0;
+uint32_t feistel_cycle_walks = 0;
 static bool feistel = false;
 
 void init_feistel()
@@ -68,8 +69,11 @@ static uint32_t feistel_function(uint32_t L, uint32_t key)
 size_t feistel_network(size_t logical_addr)
 {
     feistel_calls++;
-    size_t sector_addr = logical_addr / SECTOR_SIZE;
-    ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, logical_addr, sector_addr);
+    size_t addr = logical_addr;
+
+round:
+    size_t sector_addr = addr / SECTOR_SIZE;
+    ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, addr, sector_addr);
 
     //               |       B       |
     //               |<-B/2->|<-B/2->|
@@ -81,7 +85,7 @@ size_t feistel_network(size_t logical_addr)
     size_t R = sector_addr & R_mask;
     size_t _L, _R;
 
-    ESP_LOGD(TAG, "%s: L=0x%x R=0x%x", __func__, L, R);
+    ESP_LOGV(TAG, "%s: L=0x%x R=0x%x", __func__, L, R);
 
     for (auto i = 0; i < 3; i++) {
         // stage i
@@ -95,6 +99,13 @@ size_t feistel_network(size_t logical_addr)
     }
     size_t randomized_addr = (L << B/2) | R;
     ESP_LOGD(TAG, "%s: randomized_addr=0x%x", __func__, randomized_addr);
+
+    if (randomized_addr >= SECTOR_COUNT) {
+        ESP_LOGE(TAG, "%s: randomized 0x%x outside of domain, another round", __func__, randomized_addr);
+        addr = randomized_addr * SECTOR_SIZE;
+        feistel_cycle_walks++;
+        goto round;
+    }
 
     return randomized_addr * SECTOR_SIZE;
 }
@@ -253,8 +264,10 @@ void print_vars()
     ESP_LOGI(TAG, "move_count = %lu", move_count);
     ESP_LOGI(TAG, "cycle_count = %u", cycle_count);
     ESP_LOGI(TAG, "restarted = %lu", restarted);
-    if (feistel)
+    if (feistel) {
         ESP_LOGI(TAG, "feistel_calls = %lu", feistel_calls);
+        ESP_LOGI(TAG, "feistel cycle walks = %u", feistel_cycle_walks);
+    }
 }
  
 void print_reconstructed()
