@@ -81,6 +81,17 @@ esp_err_t WL_Advanced::init()
 
     this->initialized = false;
 
+    // calculate bits needed for sector addressing and in turn for Feistel network
+    uint32_t sector_count = this->flash_size / this->cfg.sector_size;
+    for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
+        sector_count >>= 1;
+
+    // make it even, so same bit halves can be manipulated in the network
+    if (feistel_bit_width % 2)
+        feistel_bit_width++;
+
+    ESP_LOGD(TAG, "%s: feistel_bit_width=%u", __func__, feistel_bit_width);
+
     wl_advanced_state_t *state_main = (wl_advanced_state_t *)&this->state;
     wl_advanced_state_t _state_copy;
     wl_advanced_state_t *state_copy = &_state_copy;
@@ -133,6 +144,7 @@ esp_err_t WL_Advanced::init()
         // both CRCs invalid => new instance of WL
         result = this->initSections();
         WL_RESULT_CHECK(result);
+        //TODO needed?
         result = this->recoverPos();
         WL_RESULT_CHECK(result);
     } else {
@@ -184,17 +196,6 @@ esp_err_t WL_Advanced::init()
     }
     ESP_LOGD(TAG, "%s: allocated erase_count_buffer OK", __func__);
 
-    // calculate bits needed for sector addressing and in turn for Feistel network
-    uint32_t sector_count = this->flash_size / this->cfg.sector_size;
-    for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
-        sector_count >>= 1;
-
-    // make it even, so same bit halves can be manipulated in the network
-    if (feistel_bit_width % 2)
-        feistel_bit_width++;
-
-    ESP_LOGD(TAG, "%s: feistel_bit_width=%u", __func__, feistel_bit_width);
-
     // load existing erase counts to buffer
     result = this->readEraseCounts();
     WL_RESULT_CHECK(result);
@@ -202,6 +203,62 @@ esp_err_t WL_Advanced::init()
     this->initialized = true;
     return ESP_OK;
 }
+
+esp_err_t WL_Advanced::initSections()
+{
+    esp_err_t result = ESP_OK;
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+    this->state.pos = 0;
+    this->state.access_count = 0;
+    this->state.move_count = 0;
+    // max count
+    this->state.max_count = this->flash_size / this->state_size * this->cfg.updaterate;
+    if (this->cfg.updaterate != 0) {
+        this->state.max_count = this->cfg.updaterate;
+    }
+    this->state.version = this->cfg.version;
+    this->state.block_size = this->cfg.page_size;
+    this->state.device_id = esp_random();
+
+    advanced_state->cycle_count = 0;
+    // will use only 3B for 3 stage Feistel network with 8bit keys
+    advanced_state->feistel_keys = esp_random();
+
+    memset(advanced_state->reserved, 0, sizeof(advanced_state->reserved));
+
+    this->state.max_pos = 1 + this->flash_size / this->cfg.page_size;
+
+    this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, offsetof(wl_advanced_state_t, crc));
+
+    // states in two copies
+    result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_state1, &this->state, sizeof(wl_state_t));
+    WL_RESULT_CHECK(result);
+    // write state copy
+    result = this->flash_drv->erase_range(this->addr_state2, this->state_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_state2, &this->state, sizeof(wl_state_t));
+    WL_RESULT_CHECK(result);
+
+    // config
+    result = this->flash_drv->erase_range(this->addr_cfg, this->cfg_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->write(this->addr_cfg, &this->cfg, sizeof(wl_config_t));
+    WL_RESULT_CHECK(result);
+
+    // erase counts in two copies
+    result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
+    WL_RESULT_CHECK(result);
+    result = this->flash_drv->erase_range(this->addr_erase_counts2, this->erase_count_records_size);
+    WL_RESULT_CHECK(result);
+
+    uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
+    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u) for bit with %u", __func__, keys[0], keys[1], keys[2], feistel_bit_width);
+
+    return result;
+}
+
 
 // own recoverPos() needed to call WL_Advanced::OkBuffSet() as it implements different logic
 esp_err_t WL_Advanced::recoverPos()
@@ -525,61 +582,6 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     return result;
 }
 
-esp_err_t WL_Advanced::initSections()
-{
-    esp_err_t result = ESP_OK;
-    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
-    this->state.pos = 0;
-    this->state.access_count = 0;
-    this->state.move_count = 0;
-    // max count
-    this->state.max_count = this->flash_size / this->state_size * this->cfg.updaterate;
-    if (this->cfg.updaterate != 0) {
-        this->state.max_count = this->cfg.updaterate;
-    }
-    this->state.version = this->cfg.version;
-    this->state.block_size = this->cfg.page_size;
-    this->state.device_id = esp_random();
-
-    advanced_state->cycle_count = 0;
-    // will use only 3B for 3 stage Feistel network with 8bit keys
-    advanced_state->feistel_keys = esp_random();
-
-    memset(advanced_state->reserved, 0, sizeof(advanced_state->reserved));
-
-    this->state.max_pos = 1 + this->flash_size / this->cfg.page_size;
-
-    this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, offsetof(wl_advanced_state_t, crc));
-
-    // states in two copies
-    result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
-    WL_RESULT_CHECK(result);
-    result = this->flash_drv->write(this->addr_state1, &this->state, sizeof(wl_state_t));
-    WL_RESULT_CHECK(result);
-    // write state copy
-    result = this->flash_drv->erase_range(this->addr_state2, this->state_size);
-    WL_RESULT_CHECK(result);
-    result = this->flash_drv->write(this->addr_state2, &this->state, sizeof(wl_state_t));
-    WL_RESULT_CHECK(result);
-
-    // config
-    result = this->flash_drv->erase_range(this->addr_cfg, this->cfg_size);
-    WL_RESULT_CHECK(result);
-    result = this->flash_drv->write(this->addr_cfg, &this->cfg, sizeof(wl_config_t));
-    WL_RESULT_CHECK(result);
-
-    // erase counts in two copies
-    result = this->flash_drv->erase_range(this->addr_erase_counts1, this->erase_count_records_size);
-    WL_RESULT_CHECK(result);
-    result = this->flash_drv->erase_range(this->addr_erase_counts2, this->erase_count_records_size);
-    WL_RESULT_CHECK(result);
-
-    uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
-    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u) for bit with %u", __func__, keys[0], keys[1], keys[2]);
-
-    return result;
-}
-
 uint32_t WL_Advanced::feistelFunction(uint32_t L, uint32_t key)
 {
     return (L ^ key) * (L ^ key);
@@ -587,6 +589,7 @@ uint32_t WL_Advanced::feistelFunction(uint32_t L, uint32_t key)
 
 size_t WL_Advanced::addressFeistelNetwork(size_t addr)
 {
+round:
     uint32_t sector_addr = addr / this->cfg.sector_size;
     ESP_LOGD(TAG, "%s: sector_addr=0x%x", __func__, sector_addr);
 
@@ -617,6 +620,13 @@ size_t WL_Advanced::addressFeistelNetwork(size_t addr)
     }
 
     uint32_t randomized_sector_addr = (L << feistel_bit_width/2) | R;
+
+    uint32_t sector_count = this->flash_size / this->cfg.sector_size;
+    if (randomized_sector_addr >= sector_count) {
+        ESP_LOGE(TAG, "%s: randomized sector addr 0x%x outside of domain => another round", __func__, randomized_sector_addr);
+        addr = randomized_sector_addr * this->cfg.sector_size;
+        goto round;
+    }
 
     return randomized_sector_addr * this->cfg.sector_size;
 }
