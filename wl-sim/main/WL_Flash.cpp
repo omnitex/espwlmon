@@ -21,7 +21,7 @@ size_t restarted = 0;
 // 65K sectors is plenty: up to 32MB of 512B sectors
 // or 256MB of 4K sectors
 uint8_t keys[3] = {0};
-uint8_t B = 0;
+uint8_t B = 0, MSB = 0, LSB = 0;
 uint32_t feistel_calls = 0;
 uint32_t feistel_cycle_walks = 0;
 static bool feistel = false;
@@ -38,15 +38,11 @@ void init_feistel()
     for (B = 0; sector_count; B++)
         sector_count >>= 1;
 
-    // make B even for splitting addr to 2 parts nicely
-    if (B % 2 != 0) {
-        ESP_LOGI(TAG, "%s: aligning B to be even %u => %u", __func__, B, B+1);
-        B++;
-    }
+    LSB = (B+1)/2;
+    MSB = B - LSB;
+    ESP_LOGI(TAG, "%s: B=%u, MSB=%u, LSB=%u", __func__, B, MSB, LSB);
 
-    ESP_LOGI(TAG, "%s: B=%u", __func__, B);
-
-    uint8_t key_len = B/2;
+    uint8_t key_len = (B + 1)/2;
 
     ESP_LOGI(TAG, "%s: key_len=%u", __func__, key_len);
 
@@ -57,13 +53,12 @@ void init_feistel()
 
 }
 
-//TODO can this be uint8_t ?
-static uint32_t feistel_function(uint32_t L, uint32_t key)
+static uint32_t feistel_function(uint32_t msb, uint32_t key)
 {
-    ESP_LOGV(TAG, "%s: L=0x%x key=0x%x", __func__, L, key);
-    ESP_LOGV(TAG, "%s: L xor key = 0x%x", __func__, (L ^ key));
-    ESP_LOGV(TAG, "%s: return (L xor key)^2 = 0x%x", __func__, (L ^ key)*(L ^ key));
-    return (L ^ key) * (L ^ key);
+    ESP_LOGV(TAG, "%s: msb=0x%x key=0x%x", __func__, msb, key);
+    ESP_LOGV(TAG, "%s: msb xor key = 0x%x", __func__, (msb ^ key));
+    ESP_LOGV(TAG, "%s: return (msb xor key)^2 = 0x%x", __func__, (msb ^ key)*(msb ^ key));
+    return (msb ^ key) * (msb ^ key);
 }
 
 size_t feistel_network(size_t logical_addr)
@@ -76,32 +71,33 @@ round:
     ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, addr, sector_addr);
 
     //               |       B       |
-    //               |<-B/2->|<-B/2->|
-    // logical_addr: |   L   |   R   |
+    //               |<-MSB->|<-LSB->|
+    // logical_addr: |  msb  |  lsb  |
 
-    size_t R_mask = ~( (~(size_t)0) << B/2);
+    size_t B_mask = ~( (~(size_t)0) << B );
 
-    size_t L = sector_addr >> B/2;
-    size_t R = sector_addr & R_mask;
-    size_t _L, _R;
+    size_t LSB_mask = ~( (~(size_t)0) << LSB );
+    size_t MSB_mask = ( (~(size_t)0) << LSB ) & B_mask;
 
-    ESP_LOGV(TAG, "%s: L=0x%x R=0x%x", __func__, L, R);
+    size_t msb, lsb, _msb, _lsb, randomized_addr;
 
     for (auto i = 0; i < 3; i++) {
-        // stage i
-        _L = L;
-        _R = (R ^ feistel_function(L, keys[i])) & R_mask;
-        ESP_LOGV(TAG, "%s: before swap: _L=0x%x _R=0x%x", __func__, _L, _R);
-        // swap
-        L = _R;
-        R = _L;
-        ESP_LOGV(TAG, "%s: after swap: L=0x%x R=0x%x", __func__, L, R);
+        msb = sector_addr >> LSB;
+        lsb = sector_addr & LSB_mask;
+
+        _msb = msb;
+        // mask output of F to also be |LSB| for XORing with lsb
+        _lsb = (lsb ^ (feistel_function(msb, keys[i]) & LSB_mask));
+
+        // swap lsb and msb
+        sector_addr = (_lsb << MSB) | _msb;
+        ESP_LOGV(TAG, "%s: msb=0x%x lsb=0x%x sector_addr=0x%x", __func__, _msb, _lsb, sector_addr);
     }
-    size_t randomized_addr = (L << B/2) | R;
+    randomized_addr = sector_addr;
     ESP_LOGD(TAG, "%s: randomized_addr=0x%x", __func__, randomized_addr);
 
     if (randomized_addr >= SECTOR_COUNT) {
-        ESP_LOGE(TAG, "%s: randomized 0x%x outside of domain, another round", __func__, randomized_addr);
+        ESP_LOGE(TAG, "%s: randomized 0x%x outside of domain 0x%x, another round", __func__, randomized_addr, SECTOR_COUNT);
         addr = randomized_addr * SECTOR_SIZE;
         feistel_cycle_walks++;
         goto round;

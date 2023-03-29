@@ -5,7 +5,7 @@
 
 // following values copied from what WLmon_Flash reconstructed
 #define FULL_MEM_SIZE 0x100000 // 1MB
-#define SECTOR_SIZE (2<<11) // 4KB
+#define SECTOR_SIZE (2<<11)
 #define PAGE_SIZE (SECTOR_SIZE)
 #define STATE_SIZE 0x2000
 #define CFG_SIZE 0x1000

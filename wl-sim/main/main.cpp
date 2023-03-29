@@ -11,6 +11,7 @@ static const char *TAG = "wl-sim";
 extern size_t restarted;
 extern size_t access_count;
 extern size_t move_count;
+extern uint32_t feistel_cycle_walks;
 
 //TODO parameters like this or arguments? or file?
 
@@ -21,11 +22,11 @@ extern size_t move_count;
 // {0,1} enable feistel network address randomization
 #define FEISTEL 0
 // number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
-#define ITERATIONS 25000000
+#define ITERATIONS 25
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
 // block size of consecutive sectors erased in main loop
-#define ERASE_BLOCK 40
+#define ERASE_BLOCK 1
 
 // restart after each erase range, in per mille
 // 0 disables random restarting
@@ -36,6 +37,10 @@ int main()
 {
     srand(time(0));
     esp_err_t result;
+
+    ESP_LOGI(TAG, "===== SETUP =====");
+    ESP_LOGI(TAG, "sector_size=0x%x (%u)", SECTOR_SIZE, SECTOR_SIZE);
+    ESP_LOGI(TAG, "sector_count=0x%x (%u)", SECTOR_COUNT, SECTOR_COUNT);
 
 #if FEISTEL == 1
     init_feistel();
@@ -59,12 +64,14 @@ int main()
         sector_addr = addr/SECTOR_SIZE;
 
         //ESP_LOGI(TAG, "feistel(0x%x)=>0x%x", i, sector_addr);
-        if (sector_addr >= SECTOR_COUNT)
+        if (sector_addr >= SECTOR_COUNT) {
             ESP_LOGE(TAG, "sector_addr=%u", sector_addr);
+        }
+
         occurences[sector_addr]++;
         nonzeros++;
     }
-    ESP_LOGI(TAG, "sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
+    ESP_LOGI(TAG, "after feistel: sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
     nonzeros = 0;
 
     for (auto i = 0; i < SECTOR_COUNT; i++) {
@@ -73,7 +80,7 @@ int main()
             if (occurences[i] > 1) {
                 ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             } else {
-                ESP_LOGI(TAG, "sector 0x%x occured %u times", i, occurences[i]);
+                //ESP_LOGI(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             }
         } else if (occurences[i] == 0) {
             ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
@@ -81,12 +88,12 @@ int main()
             ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
         }
     }
-    ESP_LOGI(TAG, "sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
+    ESP_LOGI(TAG, "after occurences: sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
+    ESP_LOGI(TAG, "cycle_walks=%u", feistel_cycle_walks);
 
     return 0;
 #endif
 
-    ESP_LOGI(TAG, "===== SETUP =====");
     ESP_LOGI(TAG, "iterations: %u", ITERATIONS);
     ESP_LOGI(TAG, "erase block: %u", ERASE_BLOCK);
 
