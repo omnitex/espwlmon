@@ -2,6 +2,7 @@
 #define _WLMON_H_
 
 #include "WL_Flash.h"
+#include "WL_Advanced.h"
 #include "esp_partition.h"
 
 #ifndef WL_CFG_CRC_CONST
@@ -10,13 +11,17 @@
 
 #define WLMON_BUF_SIZE 4096
 
+#define WL_MODE_UNDEFINED 0x0
+#define WL_MODE_BASE 0x1
+#define WL_MODE_ADVANCED 0x2
+
 #define WL_RESULT_CHECK(result) \
     if (result != ESP_OK) { \
         ESP_LOGE(TAG,"%s(%d): result = 0x%08x", __FUNCTION__, __LINE__, result); \
         return (result); \
     }
 
-class WLmon_Flash: WL_Flash
+class WLmon_Flash: WL_Advanced
 {
 public :
     WLmon_Flash();
@@ -42,6 +47,10 @@ public :
 private:
     int write_wl_config_json(char *s, size_t n);
     int write_wl_state_json(char *s, size_t n);
+    int write_wl_mode_json(char *s, size_t n);
+
+    //bool OkBuffSet(int pos);
+    esp_err_t recoverPos();
 
     /**
      * @brief Check that WL state CRC matches its stored CRC
@@ -53,6 +62,8 @@ private:
      *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
     */
     esp_err_t checkStateCRC(wl_state_t *state);
+
+    unsigned int wl_mode;
 };
 
 esp_err_t wlmon_get_status(char **buffer);

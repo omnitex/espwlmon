@@ -7,7 +7,10 @@
 
 static const char *TAG = "wlmon";
 
-WLmon_Flash::WLmon_Flash() {}
+WLmon_Flash::WLmon_Flash()
+{
+    this->wl_mode = WL_MODE_UNDEFINED;
+}
 
 WLmon_Flash::~WLmon_Flash() {}
 
@@ -88,6 +91,37 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     return ESP_OK;
 }
 
+//TODO edge case no pos update record?
+esp_err_t WLmon_Flash::recoverPos()
+{
+    ESP_LOGD(TAG, "%s", __func__);
+    esp_err_t result = ESP_OK;
+
+    result = WL_Flash::recoverPos();
+    uint32_t pos_base = this->state.pos;
+
+    result = WL_Advanced::recoverPos();
+    uint32_t pos_advanced = this->state.pos;
+
+    if ((pos_base != 0) && (pos_advanced == 0)) {
+        this->wl_mode = WL_MODE_BASE;
+        this->state.pos = pos_base;
+    } else if ((pos_base == 0) && (pos_advanced != 0)) {
+        this->wl_mode = WL_MODE_ADVANCED;
+        this->state.pos = pos_advanced;
+    } else if ((pos_base != 0) && (pos_advanced != 0)) {
+        ESP_LOGW(TAG, "%s: both base and advanced pos are recoverable, invalid state");
+        return ESP_ERR_INVALID_STATE;
+    } else {
+        ESP_LOGD(TAG, "%s: base and advanced pos are both zero");
+        this->state.pos = 0;
+    }
+
+    ESP_LOGI(TAG, "%s: base=%u, advanced=%u, chosen wl_mode=0x%x", __func__, pos_base, pos_advanced, this->wl_mode);
+
+    return ESP_OK;
+}
+
 int WLmon_Flash::write_wl_config_json(char *s, size_t n)
 {
     int retval = snprintf(s, n,
@@ -112,13 +146,48 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
     return retval;
 }
 
+int WLmon_Flash::write_wl_mode_json(char *s, size_t n)
+{
+    int retval;
+
+    switch(this->wl_mode) {
+        case WL_MODE_BASE:
+            retval = snprintf(s, n, "\"base\"");
+            break;
+        case WL_MODE_ADVANCED:
+            retval = snprintf(s, n, "\"advanced\"");
+            break;
+        default:
+            retval = snprintf(s, n, "\"undefined\"");
+            break;
+    }
+
+    return retval;
+}
+
 esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 {
     int retval, max_len = n;
 
-    retval = snprintf(s, n, "{\"config\":");
+    retval = snprintf(s, n, "{\"wl_mode\":");
     if (retval >= 0 && retval < n) {
         // OK
+        s += retval;
+        n -= retval;
+    } else {
+        return ESP_FAIL;
+    }
+
+    retval = write_wl_mode_json(s, n);
+    if (retval >= 0 && retval < n) {
+        s += retval;
+        n -= retval;
+    } else {
+        return ESP_FAIL;
+    }
+
+    retval = snprintf(s, n, ",\"config\":");
+    if (retval >= 0 && retval < n) {
         s += retval;
         n -= retval;
     } else {
@@ -127,7 +196,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 
     retval = write_wl_config_json(s, n);
     if (retval >= 0 && retval < n) {
-        // OK
         s += retval;
         n -= retval;
     } else {
@@ -136,7 +204,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 
     retval = snprintf(s, n, ",\"state\":");
     if (retval >= 0 && retval < n) {
-        // OK
         s += retval;
         n -= retval;
     } else {
@@ -145,7 +212,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 
     retval = write_wl_state_json(s, n);
     if (retval >= 0 && retval < n) {
-        // OK
         s += retval;
         n -= retval;
     } else {
@@ -156,7 +222,6 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 
     retval = snprintf(s, n, "}\n");
     if (retval >= 0 && retval < n) {
-        // OK
         s += retval;
         n -= retval;
     } else {

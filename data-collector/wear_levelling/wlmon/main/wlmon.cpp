@@ -83,7 +83,7 @@ esp_err_t get_wl_partition(const esp_partition_t **partition)
     // subtype any for potential data partitions different than FAT
     esp_partition_iterator_t iterator = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
 
-    // iterate throught all data partitions
+    // iterate through all data partitions
     while (iterator != NULL)
     {
         candidate = esp_partition_get(iterator);
