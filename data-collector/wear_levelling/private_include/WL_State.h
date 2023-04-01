@@ -29,8 +29,7 @@ public:
     uint32_t block_size;    /*!< size of move block*/
     uint32_t version;       /*!< state id used to identify the version of current library implementation*/
     uint32_t device_id;     /*!< ID of current WL instance*/
-    uint32_t cycle_count;   /*!< move_count zeroing counter. Used to calculate approximate memory wear, together with pos and move_count */
-    uint32_t reserved[6];   /*!< Reserved space for future use*/
+    uint32_t reserved[7];   /*!< Reserved space for future use*/
     uint32_t crc;           /*!< CRC of structure*/
 } wl_state_t;
 

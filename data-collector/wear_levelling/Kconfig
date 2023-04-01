@@ -1,5 +1,14 @@
 menu "Wear Levelling"
 
+    config WL_ADVANCED_MODE
+        bool "Wear Levelling advanced monitoring mode"
+        default n
+        help
+            Enables per sector erase count tracking.
+            Requires additional reserved sectors for storing records
+            and RAM buffer for processing. Sizes depend on
+            total number of sectors in partition.
+
     choice WL_SECTOR_SIZE
         bool "Wear Levelling library sector size"
         default WL_SECTOR_SIZE_4096
