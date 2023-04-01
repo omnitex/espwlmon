@@ -7,6 +7,9 @@
 
 static const char *TAG = "wl_advanced";
 static uint8_t feistel_bit_width;
+static uint8_t feistel_msb_width;
+static uint8_t feistel_lsb_width;
+
 #ifndef WL_CFG_CRC_CONST
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif // WL_CFG_CRC_CONST
@@ -86,11 +89,10 @@ esp_err_t WL_Advanced::init()
     for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
         sector_count >>= 1;
 
-    // make it even, so same bit halves can be manipulated in the network
-    if (feistel_bit_width % 2)
-        feistel_bit_width++;
+    feistel_lsb_width = (feistel_bit_width + 1) / 2;
+    feistel_msb_width = feistel_bit_width - feistel_lsb_width;
 
-    ESP_LOGD(TAG, "%s: feistel_bit_width=%u", __func__, feistel_bit_width);
+    ESP_LOGD(TAG, "%s: feistel_bit_width=%u, msb=%u, lsb=%u", __func__, feistel_bit_width, feistel_msb_width, feistel_lsb_width);
 
     wl_advanced_state_t *state_main = (wl_advanced_state_t *)&this->state;
     wl_advanced_state_t _state_copy;
@@ -582,44 +584,54 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
     return result;
 }
 
-uint32_t WL_Advanced::feistelFunction(uint32_t L, uint32_t key)
+uint32_t WL_Advanced::feistelFunction(uint32_t msb, uint32_t key)
 {
-    return (L ^ key) * (L ^ key);
+    ESP_LOGV(TAG, "%s: msb=0x%x, key=0x%x, xor=0x%x, return=0x%x",
+            __func__, msb, key, (msb^key), ((msb^key)*(msb^key)));
+    return (msb ^ key) * (msb ^ key);
 }
 
 size_t WL_Advanced::addressFeistelNetwork(size_t addr)
 {
-round:
-    uint32_t sector_addr = addr / this->cfg.sector_size;
-    ESP_LOGD(TAG, "%s: sector_addr=0x%x", __func__, sector_addr);
-
     wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
     uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
 
     // sector address has feistel_bit_width (B)
     // | sector address |
+    // |       B        |
     // |<-B/2->|<-B/2-> |
-    // |   L   |   R    |
+    // |  MSB  |  LSB   |
 
-    // create bitmask for masking out right B/2 bits of sector address
-    uint32_t R_mask = ~( (~(uint32_t)0) << feistel_bit_width/2);
+    // mask for full sector address
+    uint32_t B_mask = ~( (~(size_t)0) << feistel_bit_width );
 
-    // initial sector address halves
-    uint32_t L = sector_addr >> feistel_bit_width/2;
-    uint32_t R = sector_addr & R_mask;
-    // temp variables for swapping halves
-    uint32_t _L, _R;
+    uint32_t LSB_mask = ~( (~(size_t)0) << feistel_lsb_width );
+    //uint32_t MSB_mask = ( (~(size_t)0) << feistel_lsb_width ) & B_mask;
+
+    uint32_t msb, lsb, _msb, _lsb, randomized_sector_addr;
+
+round:
+    uint32_t sector_addr = addr / this->cfg.sector_size;
+    ESP_LOGD(TAG, "%s: sector_addr=0x%x", __func__, sector_addr);
+
 
     // 3 stage Feistel network for randomizing address based on generated feistel_keys
     for (uint8_t i = 0; i < 3; i++) {
-        _L = L;
-        _R = (R ^ this->feistelFunction(L, keys[i])) & R_mask;
-        // swap
-        L = _R;
-        R = _L;
+
+        msb = sector_addr >> feistel_lsb_width;
+        lsb = sector_addr & LSB_mask;
+
+        _msb = msb;
+        // mask output of function to be |LSB| for XORing with lsb
+        _lsb = (lsb ^ (this->feistelFunction(msb, keys[i]) & LSB_mask));
+
+        // assemble address, swapping msb and lsb
+        sector_addr = (_lsb << feistel_msb_width) | _msb;
+        ESP_LOGV(TAG, "%s: msb=0x%x, lsb=0x%x, sector_addr=0x%x", __func__, _msb, _lsb, sector_addr);
     }
 
-    uint32_t randomized_sector_addr = (L << feistel_bit_width/2) | R;
+    randomized_sector_addr = sector_addr;
+    ESP_LOGD(TAG, "%s: randomized_sector_addr=0x%x", __func__, randomized_sector_addr);
 
     uint32_t sector_count = this->flash_size / this->cfg.sector_size;
     if (randomized_sector_addr >= sector_count) {
