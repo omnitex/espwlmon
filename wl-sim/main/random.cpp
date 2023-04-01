@@ -5,7 +5,7 @@
 #include "random.h"
 #include "dirty_zipfian_int_distribution.h"
 
-//static const char *TAG = "random";
+static const char *TAG = "random";
 
 size_t uniform(size_t max_addr)
 {
@@ -25,7 +25,9 @@ size_t zipf(size_t max_addr)
     static std::default_random_engine generator;
     static dirtyzipf::dirty_zipfian_int_distribution<int> distribution(0, max_sector, 0.99);
 
-    return distribution(generator) * SECTOR_SIZE;
+    auto ret = distribution(generator) * SECTOR_SIZE;
+
+    return ret;
 }
 
 size_t linear(size_t max_addr)

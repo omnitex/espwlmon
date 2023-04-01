@@ -68,7 +68,6 @@ size_t feistel_network(size_t logical_addr)
 
 round:
     size_t sector_addr = addr / SECTOR_SIZE;
-    ESP_LOGD(TAG, "%s(0x%x) => sector_addr=0x%x", __func__, addr, sector_addr);
 
     //               |       B       |
     //               |<-MSB->|<-LSB->|
@@ -97,9 +96,16 @@ round:
     ESP_LOGD(TAG, "%s: randomized_addr=0x%x", __func__, randomized_addr);
 
     if (randomized_addr >= SECTOR_COUNT) {
-        ESP_LOGE(TAG, "%s: randomized 0x%x outside of domain 0x%x, another round", __func__, randomized_addr, SECTOR_COUNT);
         addr = randomized_addr * SECTOR_SIZE;
         feistel_cycle_walks++;
+#if 0
+        ESP_LOGE(TAG, "%s: logical=0x%x => randomized 0x%x outside of domain 0x%x, cycle walk", __func__, logical_addr, randomized_addr, SECTOR_COUNT);
+
+        if (feistel_cycle_walks > 20) {
+            ESP_LOGE(TAG, "%s: feistel cycle walks critical, exiting", __func__);
+            exit(1);
+        }
+#endif
         goto round;
     }
 

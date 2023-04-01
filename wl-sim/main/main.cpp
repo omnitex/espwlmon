@@ -16,22 +16,22 @@ extern uint32_t feistel_cycle_walks;
 //TODO parameters like this or arguments? or file?
 
 // {constant,uniform,zipf,linear}
-#define ADDRESS_FUNCTION linear
+#define ADDRESS_FUNCTION zipf
 // {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
 #define ZERO_ADDR 0
 // {0,1} enable feistel network address randomization
-#define FEISTEL 0
+#define FEISTEL 1
 // number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
-#define ITERATIONS 25
+#define ITERATIONS 25000000
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
-// block size of consecutive sectors erased in main loop
+// block size of consecutive sectors erased per iteration
 #define ERASE_BLOCK 1
 
 // restart after each erase range, in per mille
 // 0 disables random restarting
 #define RESTART_PROBABILITY 0
-#define ERASE_SIZE (0x100)
+#define ERASE_SIZE (0x1000)
 
 int main()
 {
@@ -47,7 +47,7 @@ int main()
 #endif
 
 // test that feistel indeed maps 1:1, that no two sectors map to the same one
-#if 1
+#if 0
     init_feistel();
 
     uint8_t occurences[SECTOR_COUNT] = {0};
@@ -98,11 +98,8 @@ int main()
     ESP_LOGI(TAG, "erase block: %u", ERASE_BLOCK);
 
     for (size_t i = 0; i < ITERATIONS; i++) {
-#if ERASE_BLOCK == 1
-        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE);
-#else
-        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR) + (i % ERASE_BLOCK) * SECTOR_SIZE, ERASE_SIZE);
-#endif
+
+        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE * ERASE_BLOCK);
 
         if (result != ESP_OK)
             break;
