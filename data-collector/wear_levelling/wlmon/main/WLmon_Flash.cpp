@@ -7,6 +7,8 @@
 
 static const char *TAG = "wlmon";
 
+#define SNPRINTF_RETVAL_CHECK(retval, s, n) do{if(retval>=0&&retval<n){s+=retval;n-=retval;}else{return ESP_FAIL;}}while(0)
+
 WLmon_Flash::WLmon_Flash()
 {
     this->wl_mode = WL_MODE_UNDEFINED;
@@ -82,11 +84,30 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     }
     WL_RESULT_CHECK(result);
 
+    this->erase_count_buffer_size = this->state.max_pos * sizeof(uint16_t);
+    this->erase_count_buffer = (uint16_t *)malloc(this->erase_count_buffer_size);
+    if (this->erase_count_buffer == NULL) {
+        result = ESP_ERR_NO_MEM;
+    }
+    WL_RESULT_CHECK(result);
+
+    ESP_LOGD(TAG, "%s: erase_count_buffer=%p", __func__, this->erase_count_buffer);
+
     result = this->recoverPos();
     if (result != ESP_OK) {
         // non OK code returned by flash_drv->read(), don't know which one, override with own code
         return ESP_ERR_FLASH_OP_FAIL;
     }
+
+    result = this->readEraseCounts();
+    WL_RESULT_CHECK(result);
+
+    ESP_LOGD(TAG, "%s: read erase counts", __func__);
+
+    result = this->updateEraseCounts();
+    WL_RESULT_CHECK(result);
+
+    ESP_LOGD(TAG, "%s: updated erase counts", __func__);
 
     return ESP_OK;
 }
@@ -136,14 +157,55 @@ int WLmon_Flash::write_wl_config_json(char *s, size_t n)
 
 int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 {
-    int retval = snprintf(s, n,
-        "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
+    int retval;
+
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+
+    // TODO use advanced_state for all? individual feistel keys?
+    if (this->wl_mode == WL_MODE_ADVANCED) {
+        retval = snprintf(s, n,
+            "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
+\"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
+\"version\":\"0x%x\",\"device_id\":\"0x%x\",\"cycle_count\":\"0x%x\",\"feistel_keys\":\"0x%x\",\"crc\":\"0x%x\"}",
+            this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
+            this->state.max_count, this->state.block_size, this->state.version, this->state.device_id,
+            advanced_state->cycle_count, advanced_state->feistel_keys, this->state.crc);
+    } else {
+        retval = snprintf(s, n,
+            "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
 \"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
 \"version\":\"0x%x\",\"device_id\":\"0x%x\",\"crc\":\"0x%x\"}",
-        this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
-        this->state.max_count, this->state.block_size, this->state.version, this->state.device_id, this->state.crc);
+            this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
+            this->state.max_count, this->state.block_size, this->state.version, this->state.device_id, this->state.crc);
+    }
 
     return retval;
+}
+
+int WLmon_Flash::write_wl_erase_counts_json(char *s, size_t n)
+{
+    int retval, total_retval = 0;
+    bool written = false;
+
+    retval = snprintf(s, n, "{");
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
+    total_retval += retval;
+
+    for (uint32_t i = 0; i < this->state.max_pos; i++) {
+        if (this->erase_count_buffer[i] != 0) {
+            retval = snprintf(s, n, "%s\"%u\":\"%u\"", written ? "," : "", i, this->erase_count_buffer[i]);
+            SNPRINTF_RETVAL_CHECK(retval, s, n);
+            total_retval += retval;
+            // first pair written, from now on append with comma
+            written = true;
+        }
+    }
+
+    retval = snprintf(s, n, "}");
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
+    total_retval += retval;
+
+    return total_retval;
 }
 
 int WLmon_Flash::write_wl_mode_json(char *s, size_t n)
@@ -165,68 +227,39 @@ int WLmon_Flash::write_wl_mode_json(char *s, size_t n)
     return retval;
 }
 
+
 esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
 {
     int retval, max_len = n;
 
     retval = snprintf(s, n, "{\"wl_mode\":");
-    if (retval >= 0 && retval < n) {
-        // OK
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     retval = write_wl_mode_json(s, n);
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     retval = snprintf(s, n, ",\"config\":");
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     retval = write_wl_config_json(s, n);
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     retval = snprintf(s, n, ",\"state\":");
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     retval = write_wl_state_json(s, n);
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
-    // TODO dummy addr in static analysis does not make much sense as it is written in updateWL()?
+    if (this->wl_mode == WL_MODE_ADVANCED) {
+        retval = snprintf(s, n, ",\"erase_counts\":");
+        SNPRINTF_RETVAL_CHECK(retval, s, n);
+
+        retval = write_wl_erase_counts_json(s, n);
+        SNPRINTF_RETVAL_CHECK(retval, s, n);
+    }
 
     retval = snprintf(s, n, "}\n");
-    if (retval >= 0 && retval < n) {
-        s += retval;
-        n -= retval;
-    } else {
-        return ESP_FAIL;
-    }
+    SNPRINTF_RETVAL_CHECK(retval, s, n);
 
     ESP_LOGI(TAG, "%s: written JSON of length %d (0x%x)", __func__, max_len-n, max_len-n);
 

@@ -48,6 +48,7 @@ private:
     int write_wl_config_json(char *s, size_t n);
     int write_wl_state_json(char *s, size_t n);
     int write_wl_mode_json(char *s, size_t n);
+    int write_wl_erase_counts_json(char *s, size_t n);
 
     //bool OkBuffSet(int pos);
     esp_err_t recoverPos();
