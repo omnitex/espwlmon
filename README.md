@@ -4,49 +4,46 @@ Tool for reading and monitoring the status of [Wear Leveling](https://docs.espre
 
 Interest is taken mainly in per sector erase count or its estimate. As program-erase (PE) memory cell lifetime is finite, knowledge of wear induced by an application is important for assessing expected memory lifetime and reliability.
 
-This tool is aimed at long running applications utilizing the wear-levelling layer. Regular snapshots (TODO) can be captured and used for predicting the longevity of flash memory.
+This tool is aimed at long term applications utilizing the wear-leveling layer.
 
-The tool is split to `wlmon` embedded C/C++ BE and (TODO) Python FE.
+The tool is split to `wlmon` embedded C++ and (TODO) Python FE.
 
 ## `wlmon`
-Embedded part of the project. Reads and reconstructs info about WL layer from structures and records kept in flash by WL. Currently works only with the ESP-IDF implementation of WL. That should include `safe` and `performance` modes as they only differ in runtime behavior. This implementation has a fatal flaw of not keeping any long term stats, thus needs extending and improving.
+Embedded part of the project, built and flashed as an `idf.py` application. Reads and reconstructs info about WL layer from structures and records kept in flash.
+As the ESP-IDF version of wear-levelling does not make it possible to monitor erase operations long term, an improved version `WL_Advanced` is practically necessary to use.
 
+## `WL_Advanced`
+Extends base wear-leveling algorithm by tracking per sector erase counts and uses Feistel network sector address randomization for improving evenness of memory wear.
 
-## WIP: `WL_Advanced`
+## Installation and usage
 
-Concept for extending ESP-IDF implementation of WL. Uses redundancy in the records kept and allows for per sector erase count tracking, albeit still with a resolution; only every `Nth` (`N` typically 16) erase is logged.
+Firstly make sure there is not an existing instance of WL in your data partition, this may require erasing given portion of flash.
+It is because there is no "update from base WL" functionality (should there be?)
 
-### `pos update record`
-Written to flash on every `pos` increment == every `dummy block` move. Minimal size of `16B` required by possible flash encryption. These records get written subsequently after each other. Once `pos` reaches its maximum value, `pos` is reset, `move_count` incremented, state structure rewritten and all these records erased.
+### 1. Get and enable `WL_Advanced`
 
-Instead of currently just 4 CRCs, store useful info in them. Mainly `sector number` of **actual physical sector** whose erase triggered the writing of `pos update record`.
+From `espwlmon/data-collector/wear_levelling` copy the following files to `esp-idf/components/wear_levelling` of your active installation of ESP-IDF
 
-| 0 | 1 | 2 | 3 |
-|:-----:|:-----:|:-----:|:-----:|
-| device_id | pos | sector number | CRC32 |
+Implementation of extended version of WL:
+- `WL_Advanced.cpp`
+- `private_include/WL_Advanced.h`
 
-Before these records are erased (on conditions described above), an aggregation of which sectors are present and their frequency in these records is performed. These `erase counts` are added to a all-time-total that is kept in a buffer.
+Intergrating `WL_Advanced`:
+- `Kconfig`  (adds a `menuconfig` option)
+- `wear_levelling.cpp` (adds instantiating `WL_Advanced` if selected)
 
-This `erase_count_buffer` stores `uint16_t` for each wear-levelled sector. As every increment in this buffer means given sector had a record and the records are written every `updaterate` ("`N`", typically 16) erases, value stored in buffer multiplied by `updaterate` gives a close estimate of sector erase count.
+Now for your project of choice, run `idf.py menuconfig` in the project folder and navigate to `Component config/Wear Levelling` and enable the advanced wear leveling mode. Or jump to symbol `WL_ADVANCED_MODE` and enable.
 
-### `erase_count_record`
+### 2. Build, flash and run your project
+While monitoring, you should see logs at various levels from `WL_Advanced`. Running your project which uses WL will create erase records in flash (only every 16th erase or any flush will trigger a new record).
 
-Once this aggregation is performed, non-zero erase counts are saved to additional allocated sectors for private use by WL in the following format. Again, all sector numbers and erase counts are `uint16_t`. This forms a `16B` record also.
+Amassing the records in practical scenario means just letting it run. For testing, it might be beneficial to do repeated erase stressing. 
 
-| `sector0` | `erase_count0` | `sector1` | `erase_count1` | `sector2` | `erase_count2` | `CRC32`
+### 3. Read status with `wlmon`
 
-Triplets are formed from non-zero erase counts and sectors (these two forming a pair). If not aligned by 3, remaining sector(s) and erase count(s) are filled with 0 => zero erase count marks an invalid record (why keep such record, when zero is the default).
+Once sufficient time and/or operations have passed, we will flash the `wlmon` app to read out a status report.
 
-So we have non-zero erase count per sector information in flash. This is what initializes `erase_count_buffer`. Such that the mentioned aggregation increments current total values for each sector.
+Navigate to `espwlmon/data-collector/wear_levelling/wlmon` and run `idf.py app-flash monitor`
 
-Summary of algorithm with changes:
+This is so far the end of the journey; JSON with status is printed repeatedly, ready for `espwlmon` (the Python will-be front-end).
 
-1. in `config()` calculate sectors needed for storing sector erase_count info in flash and "allocate" by subtracting from `flash_size`
-2. in `init()` malloc a buffer big enough for `uint16_t` for each wear-levelled sector's erase count
-3. also in `init()` try to read sector erase counts already stored in flash, initializing values in buffer
-4. `updateWL(sector)` now receives a sector argument and writes new version of `pos update records` described above
-5. once `pos` reaches `max_pos`, all `pos update records` are traversed and `buffer[sector]++` is performed
-6. then triplets of pairs `(sector, erase count)` are formed and written to flash for future init of `erase_count_buffer`
-7. `pos update records` are erased
-
-TODO: second copy of `erase_count_records` to be reliable in keeping stats on erase counts.
