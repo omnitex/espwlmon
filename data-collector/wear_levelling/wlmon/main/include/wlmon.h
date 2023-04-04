@@ -9,6 +9,7 @@
 #define WL_CFG_CRC_CONST UINT32_MAX
 #endif
 
+#define WLMON_DEFAULT_BUF_SIZE 500
 #define WLMON_BUF_SIZE 4096
 
 #define WL_MODE_UNDEFINED 0x0
@@ -42,7 +43,10 @@ public :
     //TODO virtual or not?
     virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
 
+    // write a complete WL status as JSON to the given buffer
     esp_err_t write_wl_status_json(char *s, size_t n);
+
+    esp_err_t resize_json_buffer(char **buffer, uint32_t *new_size);
 
 private:
     int write_wl_config_json(char *s, size_t n);

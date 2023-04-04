@@ -170,7 +170,6 @@ esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instan
         return result;
     }
 
-    // TODO part implementing read for linux target
     result = wlmon_flash->reconstruct(&cfg, part);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "Failed reconstructing WL info");
@@ -217,9 +216,18 @@ esp_err_t wlmon_get_status(char **buffer)
         write_error_json(*buffer, WLMON_BUF_SIZE, result);
     WL_RESULT_CHECK(result);
 
-    result = wl_instance->write_wl_status_json(*buffer, WLMON_BUF_SIZE);
+    uint32_t new_size;
+    result = wl_instance->resize_json_buffer(buffer, &new_size);
+    // on resize failure, buffer remains valid => can write error
     if (result != ESP_OK)
         write_error_json(*buffer, WLMON_BUF_SIZE, result);
+    WL_RESULT_CHECK(result);
+
+    ESP_LOGI(TAG, "%s: resized buffer new_size=%u", __func__, new_size);
+
+    result = wl_instance->write_wl_status_json(*buffer, new_size);
+    if (result != ESP_OK)
+        write_error_json(*buffer, new_size, result);
     WL_RESULT_CHECK(result);
 
     result = ESP_OK;
