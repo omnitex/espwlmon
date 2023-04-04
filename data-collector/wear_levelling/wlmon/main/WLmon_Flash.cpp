@@ -90,6 +90,7 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
         return ESP_ERR_FLASH_OP_FAIL;
     }
 
+    // erase counts are recorded only by WL_Advanced
     if (this->wl_mode == WL_MODE_ADVANCED) {
         result = this->readEraseCounts();
         WL_RESULT_CHECK(result);
@@ -166,10 +167,11 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 {
     int retval;
 
-    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
-    uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
-
     if (this->wl_mode == WL_MODE_ADVANCED) {
+
+        wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+        uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
+
         retval = snprintf(s, n,
             "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
 \"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
@@ -177,7 +179,9 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
             this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
             this->state.max_count, this->state.block_size, this->state.version, this->state.device_id,
             advanced_state->cycle_count, keys[0], keys[1], keys[2], this->state.crc);
+
     } else {
+
         retval = snprintf(s, n,
             "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
 \"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
@@ -192,6 +196,7 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 int WLmon_Flash::write_wl_erase_counts_json(char *s, size_t n)
 {
     int retval, total_retval = 0;
+    // flag for writing 2nd and following erase counts with a separating comma
     bool written = false;
 
     retval = snprintf(s, n, "{");
@@ -241,6 +246,7 @@ esp_err_t WLmon_Flash::resize_json_buffer(char **buffer, uint32_t *new_size)
     // max_pos is calculated as a 1 + flash_size / sector_size; sector count is then one less
     uint32_t sector_count = this->state.max_pos - 1;
     uint32_t _sector_count = sector_count;
+    uint32_t _new_size;
     uint8_t ascii_digits;
 
     // calculate how many ASCII digits can sector number be at max
@@ -257,21 +263,27 @@ esp_err_t WLmon_Flash::resize_json_buffer(char **buffer, uint32_t *new_size)
             __func__, sector_count, ascii_digits, single_erase_count_len, erase_counts_len);
 
     // default buff size for mode, config, state + enough for all erase counts
-    *new_size = WLMON_DEFAULT_BUF_SIZE + erase_counts_len;
+    _new_size = WLMON_DEFAULT_BUF_SIZE + erase_counts_len;
 
     // try to realloc to new size; so buffer fits whole WL status JSON including all erase counts
-    char *new_buffer = (char *) realloc((void*)*buffer, *new_size);
+    char *new_buffer = (char *) realloc((void*)*buffer, _new_size);
     // on failure, origin buffer ptr remains valid
     if (new_buffer == NULL) {
-        ESP_LOGE(TAG, "%s: realloc to %u B failed", __func__, *new_size);
+        ESP_LOGE(TAG, "%s: realloc to %u B failed", __func__, _new_size);
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGD(TAG, "%s: reallocated: %p of size %u", __func__, *buffer, *new_size);
+    ESP_LOGD(TAG, "%s: reallocated: %p of size %u", __func__, *buffer, _new_size);
 
     *buffer = new_buffer;
+    *new_size = _new_size;
 
     return ESP_OK;
+}
+
+uint8_t WLmon_Flash::get_wl_mode()
+{
+    return this->wl_mode;
 }
 
 esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)

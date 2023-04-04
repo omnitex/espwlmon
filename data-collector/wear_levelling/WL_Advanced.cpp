@@ -89,6 +89,8 @@ esp_err_t WL_Advanced::init()
     for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
         sector_count >>= 1;
 
+    // split bit width to | msb | lsb |
+    // if not even, make lsb 1 longer (e.g. | 3 bits | 4bits |)
     feistel_lsb_width = (feistel_bit_width + 1) / 2;
     feistel_msb_width = feistel_bit_width - feistel_lsb_width;
 
@@ -191,6 +193,10 @@ esp_err_t WL_Advanced::init()
     }
 
     ESP_LOGI(TAG, "%s: pos=%u, max_pos=%u", __func__, state_main->pos, state_main->max_pos);
+
+    // allocate buffer to store 2B number for each sector's erase count
+    //TODO max_pos is 1 bigger than sector count, utilize, ignore or make buffer one uint16_t smaller?
+    // would need to properly check all indexing
     this->erase_count_buffer_size = state_main->max_pos * sizeof(uint16_t);
     this->erase_count_buffer = (uint16_t *)malloc(this->erase_count_buffer_size);
     if (this->erase_count_buffer == NULL) {
@@ -198,7 +204,7 @@ esp_err_t WL_Advanced::init()
     }
     ESP_LOGD(TAG, "%s: allocated erase_count_buffer OK", __func__);
 
-    // load existing erase counts to buffer
+    // load existing erase counts to just allocated buffer
     result = this->readEraseCounts();
     WL_RESULT_CHECK(result);
 
@@ -224,6 +230,7 @@ esp_err_t WL_Advanced::initSections()
 
     advanced_state->cycle_count = 0;
     // will use only 3B for 3 stage Feistel network with 8bit keys
+    // but generating full 32bit (4B) random value is convenient, no reason to mask out the not used byte?
     advanced_state->feistel_keys = esp_random();
 
     memset(advanced_state->reserved, 0, sizeof(advanced_state->reserved));

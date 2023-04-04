@@ -35,18 +35,44 @@ public :
      * @param flash_drv Instance of Flash_Access needed for read function
      *
      * @return
-     *       - ESP_OK, if WL status was reconstructed successfuly
+     *       - ESP_OK, if WL status was reconstructed successfully
      *       - ESP_ERR_INVALID_CRC, if CRC of wl_state_t that is read does not match its stored CRC
      *       - ESP_ERR_NO_MEM, if memory allocation for temp_buff fails
      *       - ESP_ERR_FLASH_OP_FAIL, if recovering pos from flash fails
     */
-    //TODO virtual or not?
     virtual esp_err_t reconstruct(wl_config_t *cfg, Flash_Access *flash_drv);
 
-    // write a complete WL status as JSON to the given buffer
-    esp_err_t write_wl_status_json(char *s, size_t n);
+    /**
+     * @brief Writes a complete WL status in JSON format to the given buffer of given length
+     *
+     * @param s Buffer for writing the JSON WL status into
+     * @param n Length in bytes of the buffer
+     *
+     * @return
+     *       - ESP_OK, if full write was successful
+     *       - ESP_FAIl, if JSON could not be written in full
+    */
+    virtual esp_err_t write_wl_status_json(char *s, size_t n);
 
-    esp_err_t resize_json_buffer(char **buffer, uint32_t *new_size);
+    /**
+     * @brief Reallocates given buffer to additionally fit erase counts from WL_Advanced
+     *
+     * @param[out] buffer Buffer to realloc. On failure it remains valid and of size as before calling this method
+     * @param[out] new_size New size of buffer after successful realloc
+     *
+     * @return
+     *       - ESP_OK, if buffer could be reallocated to fit erase counts
+     *       - ESP_ERR_NO_MEM, if realloc failed
+    */
+    virtual esp_err_t resize_json_buffer(char **buffer, uint32_t *new_size);
+
+    /**
+     * @brief Get detected WL mode
+     *
+     * @return {WL_MODE_ADVANCED,WL_MODE_BASE,WL_MODE_UNDEFINED}
+    */
+    //TODO typedef enum for wl_mode_* type?
+    virtual uint8_t get_wl_mode();
 
 private:
     int write_wl_config_json(char *s, size_t n);
@@ -54,23 +80,22 @@ private:
     int write_wl_mode_json(char *s, size_t n);
     int write_wl_erase_counts_json(char *s, size_t n);
 
-    //bool OkBuffSet(int pos);
     esp_err_t recoverPos();
-
-    /**
-     * @brief Check that WL state CRC matches its stored CRC
-     *
-     * @param state wl_state_t of which to check CRC
-     *
-     * @return
-     *       - ESP_OK, if calculated CRC matches stored CRC
-     *       - ESP_ERR_INVALID_CRC, if calculated CRC differs from stored CRC
-    */
     esp_err_t checkStateCRC(wl_state_t *state);
 
     unsigned int wl_mode;
 };
 
+/**
+ * @brief All-in-one convenience function.
+ * Allocates required buffers, instantiates wlmon, reconstructs status and writes JSON to buffer
+ *
+ * @param[out] buffer Buffer for JSON status output. Will be allocated to fit the JSON.
+ *
+ * @return
+ *       - ESP_OK, if all steps in getting WL status succeed
+ *       - various ESP_ERR_* otherwise
+*/
 esp_err_t wlmon_get_status(char **buffer);
 
 #endif // #ifndef _WLMON_H_
