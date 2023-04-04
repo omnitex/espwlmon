@@ -29,16 +29,6 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 {
     esp_err_t result = ESP_OK;
 
-    ESP_LOGV(TAG, "%s start_addr=0x%08x, full_mem_size=0x%08x, page_size=0x%08x, sector_size=0x%08x, updaterate=0x%08x, wr_size=0x%08x, version=0x%08x, temp_buff_size=0x%08x", __func__,
-             (uint32_t) cfg->start_addr,
-             cfg->full_mem_size,
-             cfg->page_size,
-             cfg->sector_size,
-             cfg->updaterate,
-             cfg->wr_size,
-             cfg->version,
-             (uint32_t) cfg->temp_buff_size);
-
     this->flash_drv = flash_drv;
 
     memcpy(&this->cfg, cfg, sizeof(wl_config_t));
@@ -68,15 +58,15 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
         return ESP_ERR_INVALID_CRC;
     }
 
-    ESP_LOGD(TAG, "%s - config ID=%i, stored ID=%i, access_count=%i, block_size=%i, max_count=%i, pos=%i, move_count=0x%8.8X",
-             __func__,
-             this->cfg.version,
-             this->state.version,
-             this->state.access_count,
-             this->state.block_size,
-             this->state.max_count,
-             this->state.pos,
-             this->state.move_count);
+    wl_advanced_state_t *advanced_state = (wl_advanced_state_t *)&this->state;
+    // first WL version detection, second check in recoverPos()
+    // in advanced, Feistel keys are obviously non-zero
+    if (advanced_state->feistel_keys != 0) {
+        this->wl_mode = WL_MODE_ADVANCED;
+    // in base, they are in reserved space which is set to 0
+    } else {
+        this->wl_mode = WL_MODE_BASE;
+    }
 
     this->temp_buff = (uint8_t *) malloc(this->cfg.temp_buff_size);
     if (this->temp_buff == NULL) {
@@ -115,7 +105,6 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     return ESP_OK;
 }
 
-//TODO edge case no pos update record?
 esp_err_t WLmon_Flash::recoverPos()
 {
     ESP_LOGD(TAG, "%s", __func__);
@@ -130,23 +119,33 @@ esp_err_t WLmon_Flash::recoverPos()
     WL_RESULT_CHECK(result);
     uint32_t pos_advanced = this->state.pos;
 
+    ESP_LOGI(TAG, "%s: base=%u, advanced=%u, Feistel keys chosen wl_mode=0x%x", __func__, pos_base, pos_advanced, this->wl_mode);
+
     // if one recovered non-zero and the other zero
     // assume the non-zero is the one used
     if ((pos_base != 0) && (pos_advanced == 0)) {
-        this->wl_mode = WL_MODE_BASE;
+        // should be base WL
         this->state.pos = pos_base;
+        // compare to previously obtained mode based on Feistel keys
+        if (this->wl_mode != WL_MODE_BASE) {
+            ESP_LOGE(TAG, "%s: wl_mode=0x%x does not match mode detected by Feistel keys (0x%x)", __func__, WL_MODE_BASE, this->wl_mode);
+            return ESP_ERR_INVALID_STATE;
+        }
     } else if ((pos_base == 0) && (pos_advanced != 0)) {
-        this->wl_mode = WL_MODE_ADVANCED;
+        // should be advanced WL
         this->state.pos = pos_advanced;
+        // compare to previously obtained mode based on Feistel keys
+        if (this->wl_mode != WL_MODE_ADVANCED) {
+            ESP_LOGE(TAG, "%s: wl_mode=0x%x does not match mode detected by Feistel keys (0x%x)", __func__, WL_MODE_ADVANCED, this->wl_mode);
+            return ESP_ERR_INVALID_STATE;
+        }
     } else if ((pos_base != 0) && (pos_advanced != 0)) {
-        ESP_LOGW(TAG, "%s: both base and advanced pos are recoverable, invalid state");
+        ESP_LOGE(TAG, "%s: both base and advanced pos are recoverable, invalid state", __func__);
         return ESP_ERR_INVALID_STATE;
     } else {
-        ESP_LOGD(TAG, "%s: base and advanced pos are both zero");
+        ESP_LOGW(TAG, "%s: base and advanced pos are both zero, cannot check mode detected by Feistel keys (0x%x)", __func__, this->wl_mode);
         this->state.pos = 0;
     }
-
-    ESP_LOGI(TAG, "%s: base=%u, advanced=%u, chosen wl_mode=0x%x", __func__, pos_base, pos_advanced, this->wl_mode);
 
     return ESP_OK;
 }
@@ -177,7 +176,7 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
 \"version\":\"0x%x\",\"device_id\":\"0x%x\",\"cycle_count\":\"0x%x\",\"feistel_keys\":[\"0x%x\",\"0x%x\",\"0x%x\"],\"crc\":\"0x%x\"}",
             this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
             this->state.max_count, this->state.block_size, this->state.version, this->state.device_id,
-            advanced_state->cycle_count, keys[0], keys[1], keys[3], this->state.crc);
+            advanced_state->cycle_count, keys[0], keys[1], keys[2], this->state.crc);
     } else {
         retval = snprintf(s, n,
             "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
