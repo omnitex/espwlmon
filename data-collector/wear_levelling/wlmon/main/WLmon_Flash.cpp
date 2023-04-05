@@ -281,7 +281,7 @@ esp_err_t WLmon_Flash::resize_json_buffer(char **buffer, uint32_t *new_size)
     return ESP_OK;
 }
 
-uint8_t WLmon_Flash::get_wl_mode()
+wl_mode_t WLmon_Flash::get_wl_mode()
 {
     return this->wl_mode;
 }

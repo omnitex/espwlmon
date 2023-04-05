@@ -12,9 +12,7 @@
 #define WLMON_DEFAULT_BUF_SIZE 500
 #define WLMON_BUF_SIZE 4096
 
-#define WL_MODE_UNDEFINED 0x0
-#define WL_MODE_BASE 0x1
-#define WL_MODE_ADVANCED 0x2
+typedef enum WL_MODE { WL_MODE_UNDEFINED = 0, WL_MODE_BASE, WL_MODE_ADVANCED } wl_mode_t;
 
 #define WL_RESULT_CHECK(result) \
     if (result != ESP_OK) { \
@@ -69,10 +67,9 @@ public :
     /**
      * @brief Get detected WL mode
      *
-     * @return {WL_MODE_ADVANCED,WL_MODE_BASE,WL_MODE_UNDEFINED}
+     * @return wl_mode_t detected WL mode
     */
-    //TODO typedef enum for wl_mode_* type?
-    virtual uint8_t get_wl_mode();
+    virtual wl_mode_t get_wl_mode();
 
 private:
     int write_wl_config_json(char *s, size_t n);
@@ -83,7 +80,7 @@ private:
     esp_err_t recoverPos();
     esp_err_t checkStateCRC(wl_state_t *state);
 
-    unsigned int wl_mode;
+    wl_mode_t wl_mode;
 };
 
 /**
