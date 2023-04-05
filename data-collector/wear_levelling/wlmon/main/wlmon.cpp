@@ -83,7 +83,7 @@ esp_err_t get_wl_partition(const esp_partition_t **partition)
     // subtype any for potential data partitions different than FAT
     esp_partition_iterator_t iterator = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
 
-    // iterate throught all data partitions
+    // iterate through all data partitions
     while (iterator != NULL)
     {
         candidate = esp_partition_get(iterator);
@@ -163,17 +163,17 @@ esp_err_t wl_attach(const esp_partition_t *partition, WLmon_Flash **wlmon_instan
     // get_wl_config() verifies config CRC
     result = get_wl_config(&cfg, partition);
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed getting WL config from flash");
+        ESP_LOGE(TAG, "%s: failed getting WL config from flash: %s", __func__, esp_err_to_name(result));
 
         wl_detach(part, wlmon_flash);
 
         return result;
     }
 
-    // TODO part implementing read for linux target
+    // main logic of wlmon; reads/calculates => reconstructs info about WL
     result = wlmon_flash->reconstruct(&cfg, part);
     if (result != ESP_OK) {
-        ESP_LOGE(TAG, "Failed reconstructing WL info");
+        ESP_LOGE(TAG, "%s: failed reconstructing WL info: %s", __func__, esp_err_to_name(result));
 
         wl_detach(part, wlmon_flash);
 
@@ -191,17 +191,19 @@ int write_error_json(char *s, size_t n, esp_err_t errcode)
     // TODO add verbose message here? simple error name from above could be interpreted at FE
     // but the semantics could change and it would need to be updated across BE/FE
     // or print verbose message here and the potential changes that would need to be addressed stay within data-collector
+
+    // quick and dirty solution? no verbose error reporting, if something fails, you just do idf.py monitor instead of viewing it through front end
     return retval;
 }
-
 
 esp_err_t wlmon_get_status(char **buffer)
 {
     esp_err_t result = ESP_OK;
     const esp_partition_t *partition = NULL;
     WLmon_Flash *wl_instance;
+    uint32_t json_buffer_size = WLMON_DEFAULT_BUF_SIZE;
 
-    *buffer = (char *)malloc(WLMON_BUF_SIZE);
+    *buffer = (char *)malloc(json_buffer_size);
     if (*buffer == NULL) {
         result = ESP_ERR_NO_MEM;
     }
@@ -209,17 +211,30 @@ esp_err_t wlmon_get_status(char **buffer)
 
     result = get_wl_partition(&partition);
     if (result != ESP_OK)
-        write_error_json(*buffer, WLMON_BUF_SIZE, result);
+        write_error_json(*buffer, json_buffer_size, result);
     WL_RESULT_CHECK(result);
 
     result = wl_attach(partition, &wl_instance);
     if (result != ESP_OK)
-        write_error_json(*buffer, WLMON_BUF_SIZE, result);
+        write_error_json(*buffer, json_buffer_size, result);
     WL_RESULT_CHECK(result);
 
-    result = wl_instance->write_wl_status_json(*buffer, WLMON_BUF_SIZE);
+    if (wl_instance->get_wl_mode() == WL_MODE_ADVANCED) {
+        uint32_t new_json_buffer_size;
+
+        result = wl_instance->resize_json_buffer(buffer, &new_json_buffer_size);
+        // on resize failure, buffer remains valid => can write error
+        if (result != ESP_OK)
+            write_error_json(*buffer, json_buffer_size, result);
+        WL_RESULT_CHECK(result);
+
+        json_buffer_size = new_json_buffer_size;
+        ESP_LOGI(TAG, "%s: resized buffer to %u B", __func__, json_buffer_size);
+    }
+
+    result = wl_instance->write_wl_status_json(*buffer, json_buffer_size);
     if (result != ESP_OK)
-        write_error_json(*buffer, WLMON_BUF_SIZE, result);
+        write_error_json(*buffer, json_buffer_size, result);
     WL_RESULT_CHECK(result);
 
     result = ESP_OK;
