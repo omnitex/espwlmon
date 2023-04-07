@@ -9,6 +9,8 @@ import json
 from math import ceil
 import serial
 
+import PySimpleGUI as sg
+
 import esptool
 from esptool.util import (
     FatalError
@@ -63,8 +65,21 @@ def monitor(port):
     print("Received JSON confirmed, closing serial port")
     serial_port.close()
 
-    print(json.dumps(json_dict, indent=4))
+    gui(json_dict)
 
+#TODO exclude erase counts from json
+def gui(json_dict):
+    sg.theme('Gray Gray Gray')
+    json_nice_dump = json.dumps(json_dict, indent=4)
+    layout = [[sg.T(json_nice_dump), sg.B('Exit')]]
+    windows = sg.Window('espwlmon', layout)
+    while True:
+        event, values = windows.read()
+        if event in (sg.WIN_CLOSED, 'Exit'):
+            break
+    windows.close()
+
+#TODO this and other stuff obsolete and to be removed? espwlmon will only be GUI tool for showing reconstructed status?
 def flash():
     if not os.path.isfile(DATA_COLLECTOR_BIN):
         print("Please build data collector first: espwlmon.py build --chip <target-chip>")
@@ -167,7 +182,7 @@ def main():
     """
 
     # firstly setup needed ESP-IDF imports
-    idf_setup()
+    #idf_setup()
 
     parser = argparse.ArgumentParser(
         description=f"espwlmon.py v{__version__} - Flash Wear Leveling Monitoring Utility for devices with Espressif chips",
