@@ -50,12 +50,27 @@ def monitor(port):
 
     gui(json_dict)
 
-#TODO exclude erase counts from json
+#TODO launch GUI before getting JSON with a loading screen
 def gui(json_dict):
     sg.theme('Gray Gray Gray')
-    json_nice_dump = json.dumps(json_dict, indent=4)
-    layout = [[sg.T(json_nice_dump), sg.B('Exit')]]
-    windows = sg.Window('espwlmon', layout)
+
+    if 'erase_counts' in json_dict:
+        erase_counts = json_dict.pop('erase_counts')
+        print(f'erase_counts: {erase_counts}')
+
+    wl_mode = json_dict.pop('wl_mode')
+    config = json_dict.pop('config')
+    state = json_dict.pop('state')
+
+    left = [[sg.T(f'wl_mode: {wl_mode}')]]
+    for key in config:
+        left += [[sg.T(f'{key}: {config[key]}')]]
+    for key in state:
+        left += [[sg.T(f'{key}: {state[key]}')]]
+
+    layout = [[sg.Column(left, pad=(0,0))]]
+
+    windows = sg.Window('espwlmon', layout, margins=(10,10))
     while True:
         event, values = windows.read()
         if event in (sg.WIN_CLOSED, 'Exit'):
