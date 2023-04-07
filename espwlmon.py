@@ -8,6 +8,14 @@ import json
 import serial
 
 import PySimpleGUI as sg
+#import matplotlib
+import matplotlib.pyplot as plt
+
+import plotly.express as px
+import plotly.tools as tls
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
 def monitor(port):
     print(f"Starting monitor on port {port}")
@@ -50,6 +58,12 @@ def monitor(port):
 
     gui(json_dict)
 
+def draw_figure(canvas, figure):
+    figure_canvas_agg = FigureCanvasTkAgg(figure, canvas)
+    figure_canvas_agg.draw()
+    figure_canvas_agg.get_tk_widget().pack(side="top", fill="both", expand=1)
+    return figure_canvas_agg
+
 #TODO launch GUI before getting JSON with a loading screen
 def gui(json_dict):
     sg.theme('Gray Gray Gray')
@@ -61,6 +75,8 @@ def gui(json_dict):
     wl_mode = json_dict.pop('wl_mode')
     config = json_dict.pop('config')
     state = json_dict.pop('state')
+    sector_count = int(state['max_pos'], base=16) - 1
+    print(f'sector_count: {sector_count}')
 
     left = [[sg.T(f'wl_mode: {wl_mode}')]]
     for key in config:
@@ -68,14 +84,24 @@ def gui(json_dict):
     for key in state:
         left += [[sg.T(f'{key}: {state[key]}')]]
 
-    layout = [[sg.Column(left, pad=(0,0))]]
+    graph = [[sg.Canvas(key='-CANVAS-')]]
 
-    windows = sg.Window('espwlmon', layout, margins=(10,10))
+    layout = [[sg.Column(left), sg.Column(graph)]]
+
+    window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
+
+    #TODO placeholder heatmap
+    fig = plt.figure()
+    a = np.random.random((16, 16))
+    plt.imshow(a, cmap='hot', interpolation='nearest')
+
+    draw_figure(window['-CANVAS-'].TKCanvas, fig)
+
     while True:
-        event, values = windows.read()
+        event, values = window.read()
         if event in (sg.WIN_CLOSED, 'Exit'):
             break
-    windows.close()
+    window.close()
 
 
 def main():
