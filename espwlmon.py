@@ -191,6 +191,12 @@ def format_thousands(num, _):
     else:
         return str(num)
 
+def popup_toast(message, duration=2000):
+    toast_layout = [[sg.Text(message, font=('Helvetica', 12), pad=(20,10))]]
+    toast_window = sg.Window('', toast_layout, keep_on_top=True, no_titlebar=True, alpha_channel=.8, finalize=True)
+    toast_window.TKroot.after(duration, toast_window.close)
+
+
 #TODO launch GUI before getting JSON with a loading screen
 def gui(json_dict):
     sg.theme('Gray Gray Gray')
@@ -205,9 +211,9 @@ def gui(json_dict):
     sector_count = int(state['max_pos'], base=16) - 1
     print(f'sector_count: {sector_count}')
 
-    sector_count = 257;
-
     # get heatmap side lengths for given sector_count
+    # e.g. 248 sector fit in a X=16, Y=16 square
+    # this introduces invalid positions in the heatmap, from sector count up to X*Y
     X = 1
     Y = sector_count
     while X < Y:
@@ -216,49 +222,74 @@ def gui(json_dict):
 
     print(f'X = {X}, Y = {Y}')
 
-    # 2D heatmap to contain all sector counts, init all zeros
-    heatmap = np.zeros((X, Y) ,dtype=int)
+    # 2D heatmap to contain all integer sector counts, init with zeros
+    heatmap = np.zeros((X, Y), dtype=int)
+    # write an invalid erase count of -1 to positions that are in the heatmap
+    # yet are not valid sectors (e.g. 248-256)
+    for i in range(sector_count, X*Y):
+        heatmap[i % X][i // X] = -1
 
     # fill heatmap with values from erase_counts JSON
     # index with sector num but in 2D
     for sector_num_str, erase_count_str in erase_counts.items():
         sector_num = int(sector_num_str)
         erase_count = int(erase_count_str)
-        # every erase count means 16 erases, as that is the threshold for triggering
-        # writing a record to flash
-        heatmap[sector_num % X][sector_num // X] = 16 * erase_count
+        # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
 
+        #TODO back to mult by 16
+        heatmap[sector_num % X][sector_num // X] = 10000 * erase_count
+
+    # create a layout for left column listing info from config and state structs
     left = [[sg.T(f'wl_mode: {wl_mode}')]]
     for key in config:
         left += [[sg.T(f'{key}: {config[key]}')]]
     for key in state:
         left += [[sg.T(f'{key}: {state[key]}')]]
 
+    # layout for graph, will draw later
     graph = [[sg.Canvas(key='-CANVAS-')]]
 
-    layout = [[sg.Column(left), sg.Column(graph)]]
+    # layout for buttons, use constants for names as they become action names also
+    TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
+    EXPORT_PLOTLY_HTML = 'Export Plotly'
+    buttons = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
 
+    # overall layout with three columns
+    layout = [[sg.Column(left), sg.Column(graph), sg.Column(buttons)]]
+
+    # create window with said layout
     window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
 
     # plot the heatmap
     fig, ax = plt.subplots()
-    im, _ = create_heatmap(heatmap, np.arange(X), np.arange(Y), ax=ax, cmap='viridis', cbarlabel='erase count')
+    im, _ = create_heatmap(heatmap, [hex(x) for x in range(X)], [hex(y) for y in range(Y)], ax=ax, cmap='plasma', cbarlabel='erase count')
 
+    # annotate individual positions with erase counts formatted to display thousands as multiple of K
     annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
+    # improves spacing of stuff in fig a bit
     fig.tight_layout()
 
-    draw_figure(window['-CANVAS-'].TKCanvas, fig)
+    # drag the heatmap
+    canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
 
-    # TODO plotly export as html, button?
-    # df = px.data.tips()
-
-    # fig = px.density_heatmap(df, x="total_bill", y="tip", text_auto=True)
-    # fig.write_html('heatmap.html')
-
+    # main event loop for the window
     while True:
         event, values = window.read()
         if event in (sg.WIN_CLOSED, 'Exit'):
             break
+        if event == TOGGLE_ERASE_COUNT_ANNOTATIONS:
+            for annotation in ax.texts:
+                annotation.set_visible(not annotation.get_visible())
+            canvas.draw()
+        if event == EXPORT_PLOTLY_HTML:
+            #TODO custom hovertext
+            px_heatmap = px.imshow(heatmap, text_auto=True)
+            px_heatmap.update_layout(xaxis=dict(tickmode='linear'), yaxis=dict(tickmode='linear'))
+            filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
+            if filename is not None:
+                px_heatmap.write_html(filename)
+                popup_toast('Plotly heatmap exported successfuly')
+
     window.close()
 
 def main():
