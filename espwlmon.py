@@ -60,6 +60,7 @@ def monitor(port):
 
     gui(json_dict)
 
+# Helper functions for creating a Matplotlib heatmap
 # source https://matplotlib.org/stable/gallery/images_contours_and_fields/image_annotated_heatmap.html
 def create_heatmap(data, row_labels, col_labels, ax=None,
             cbar_kw=None, cbarlabel="", **kwargs):
@@ -119,7 +120,6 @@ def create_heatmap(data, row_labels, col_labels, ax=None,
     ax.tick_params(which="minor", bottom=False, left=False)
 
     return im, cbar
-
 
 def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
                      textcolors=("black", "white"),
@@ -191,15 +191,70 @@ def format_thousands(num, _):
     else:
         return str(num)
 
-def popup_toast(message, duration=2000):
-    toast_layout = [[sg.Text(message, font=('Helvetica', 12), pad=(20,10))]]
+def popup_toast(window, message, duration=2000):
+    toast_layout = [[sg.Text(message, pad=(20,10))]]
     toast_window = sg.Window('', toast_layout, keep_on_top=True, no_titlebar=True, alpha_channel=.8, finalize=True)
+    # one-shot centering of toast to the center of parent window, does not track movement after that
+    toast_window.move(window.current_location()[0] + window.size[0] // 2 - toast_window.size[0] // 2, window.current_location()[1] + window.size[1] // 2 - toast_window.size[1] // 2)
     toast_window.TKroot.after(duration, toast_window.close)
 
+def make_text_vertical(text):
+    vertical = ''
+    for l in text:
+        vertical += f'{l}\n'
+    return vertical
+
+def create_config_state_layout(wl_mode, config, state):
+    layout = [[sg.T(f'wl_mode: {wl_mode}')]]
+    layout += [[sg.HorizontalSeparator()]]
+
+    config_header = [[sg.T(make_text_vertical('CONFIG'))]]
+
+    config_content = [[]]
+    for key in config:
+        config_content += [[sg.T(f'{key}: {config[key]}')]]
+
+    config_layout = [[sg.Column(config_header), sg.Column(config_content)]]
+
+    layout += config_layout
+    layout += [[sg.HorizontalSeparator()]]
+
+    state_header = [[sg.T(make_text_vertical('STATE'))]]
+
+    state_content = [[]]
+    for key in state:
+        state_content += [[sg.T(f'{key}: {state[key]}')]]
+
+    state_layout = [[sg.Column(state_header), sg.Column(state_content)]]
+
+    layout += state_layout
+
+    return layout
+
+def create_init_heatmap(sector_count):
+    # calculate heatmap side lengths for given sector_count
+    # e.g. 248 sector fit in a X=16, Y=16 square
+    # this introduces invalid positions in the heatmap, from sector count up to X*Y
+    X = 1
+    Y = sector_count
+    while X < Y:
+        X += 1
+        Y = math.ceil(sector_count / X)
+
+
+    # 2D heatmap to contain all integer sector counts, init with zeros
+    heatmap = np.zeros((X, Y), dtype=int)
+    # write an invalid erase count of -1 to positions that are in the heatmap
+    # yet are not valid sectors (e.g. 248-256)
+    for i in range(sector_count, X*Y):
+        heatmap[i // X][i % X] = -1
+
+    return heatmap, X, Y
 
 #TODO launch GUI before getting JSON with a loading screen
 def gui(json_dict):
     sg.theme('Gray Gray Gray')
+    sg.set_options(font=('Roboto', 11))
 
     if 'erase_counts' in json_dict:
         erase_counts = json_dict.pop('erase_counts')
@@ -211,63 +266,47 @@ def gui(json_dict):
     sector_count = int(state['max_pos'], base=16) - 1
     print(f'sector_count: {sector_count}')
 
-    # get heatmap side lengths for given sector_count
-    # e.g. 248 sector fit in a X=16, Y=16 square
-    # this introduces invalid positions in the heatmap, from sector count up to X*Y
-    X = 1
-    Y = sector_count
-    while X < Y:
-        X += 1
-        Y = math.ceil(sector_count / X)
-
+    heatmap, X, Y = create_init_heatmap(sector_count)
     print(f'X = {X}, Y = {Y}')
-
-    # 2D heatmap to contain all integer sector counts, init with zeros
-    heatmap = np.zeros((X, Y), dtype=int)
-    # write an invalid erase count of -1 to positions that are in the heatmap
-    # yet are not valid sectors (e.g. 248-256)
-    for i in range(sector_count, X*Y):
-        heatmap[i % X][i // X] = -1
 
     # fill heatmap with values from erase_counts JSON
     # index with sector num but in 2D
+    #TODO handle no erase counts for base
     for sector_num_str, erase_count_str in erase_counts.items():
         sector_num = int(sector_num_str)
         erase_count = int(erase_count_str)
         # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
-
-        #TODO back to mult by 16
-        heatmap[sector_num % X][sector_num // X] = 10000 * erase_count
+        heatmap[sector_num // X][sector_num % X] = 16 * erase_count
 
     # create a layout for left column listing info from config and state structs
-    left = [[sg.T(f'wl_mode: {wl_mode}')]]
-    for key in config:
-        left += [[sg.T(f'{key}: {config[key]}')]]
-    for key in state:
-        left += [[sg.T(f'{key}: {state[key]}')]]
+    left_layout = create_config_state_layout(wl_mode, config, state)
 
     # layout for graph, will draw later
-    graph = [[sg.Canvas(key='-CANVAS-')]]
+    graph_layout = [[sg.Canvas(key='-CANVAS-')]]
 
     # layout for buttons, use constants for names as they become action names also
     TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
     EXPORT_PLOTLY_HTML = 'Export Plotly'
-    buttons = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
 
     # overall layout with three columns
-    layout = [[sg.Column(left), sg.Column(graph), sg.Column(buttons)]]
-
-    # create window with said layout
-    window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
+    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(buttons_layout)]]
 
     # plot the heatmap
     fig, ax = plt.subplots()
-    im, _ = create_heatmap(heatmap, [hex(x) for x in range(X)], [hex(y) for y in range(Y)], ax=ax, cmap='plasma', cbarlabel='erase count')
+    palette = plt.cm.plasma.with_extremes(over='red', bad='black')
+    #TODO awful things because I'm using the heatmap with integers and NaN is float type
+    #so gotta keep it float and only convert to int when showing in annotations, somehow?
+    masked_heatmap = np.ma.masked_where(heatmap < 0, heatmap)
+    im, _ = create_heatmap(masked_heatmap, [hex(x) for x in range(X)], [hex(y) for y in range(Y)], ax=ax, cbarlabel='erase count', cmap=palette)
 
     # annotate individual positions with erase counts formatted to display thousands as multiple of K
     annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
     # improves spacing of stuff in fig a bit
     fig.tight_layout()
+
+    # create window
+    window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
 
     # drag the heatmap
     canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
@@ -285,10 +324,16 @@ def gui(json_dict):
             #TODO custom hovertext
             px_heatmap = px.imshow(heatmap, text_auto=True)
             px_heatmap.update_layout(xaxis=dict(tickmode='linear'), yaxis=dict(tickmode='linear'))
+
+            x_values = range(len(heatmap[0]))
+            y_values = range(len(heatmap))
+            hover_labels = [[f'sector_num={y*X + x}, erase_count={heatmap[y][x]}' for x in x_values] for y in y_values]
+            px_heatmap.update_traces(hovertemplate='%{customdata}<extra></extra>', customdata=hover_labels, text=heatmap)
+
             filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
             if filename is not None:
                 px_heatmap.write_html(filename)
-                popup_toast('Plotly heatmap exported successfuly')
+                popup_toast(window, 'Plotly heatmap exported successfuly')
 
     window.close()
 
