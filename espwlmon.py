@@ -295,15 +295,13 @@ def gui(json_dict):
         # create matplotlib figure
         fig, ax = plt.subplots()
         # choose plasma color palette with extremes (set below using vmin, vmax)
-        palette = plt.cm.plasma.with_extremes(over='red', under='black')
+        palette = plt.cm.plasma.with_extremes(under='black')
 
-        #TODO settable?
-        CRITICAL_ERASE_THRESHOLD = 100
         # create lists of hex labels for ticks for both rows (Y) and cols (Y)
         row_labels = [hex(x) for x in range(X)]
         col_labels = [hex(y) for y in range(Y)]
         # plot the heatmap, set vmin, vmax limits for extremes that will be colored as set above in with_extremes()
-        im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0, vmax=CRITICAL_ERASE_THRESHOLD)
+        im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0)
 
         # annotate individual positions with erase counts formatted to display thousands as multiple of K
         annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
