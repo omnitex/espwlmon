@@ -5,16 +5,14 @@ __version__ = "0.3"
 import argparse
 import sys
 import json
-import serial
 import math
+import serial
 
 import PySimpleGUI as sg
 import matplotlib
 import matplotlib.pyplot as plt
 
 import plotly.express as px
-import plotly.tools as tls
-import plotly.io as pio
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
@@ -50,6 +48,7 @@ def monitor(port):
             print(f"Error parsing received JSON: {json_decode_error.msg}")
             context_characters = 15
             # print the context of error with characters around and arrow on next line pointing to the exact position
+            #TODO this does not seem to work?
             print(f"{json_line[json_decode_error.pos-context_characters:json_decode_error.pos+context_characters]}")
             print(' ' * context_characters, '^', ' ' * context_characters, sep='')
             serial_port.close()
@@ -60,7 +59,7 @@ def monitor(port):
 
     gui(json_dict)
 
-# Helper functions for creating a Matplotlib heatmap
+# Helper function for creating a Matplotlib heatmap
 # source https://matplotlib.org/stable/gallery/images_contours_and_fields/image_annotated_heatmap.html
 def create_heatmap(data, row_labels, col_labels, ax=None,
             cbar_kw=None, cbarlabel="", **kwargs):
@@ -121,6 +120,8 @@ def create_heatmap(data, row_labels, col_labels, ax=None,
 
     return im, cbar
 
+# Helper function for annotating a Matplotlib heatmap
+# source https://matplotlib.org/stable/gallery/images_contours_and_fields/image_annotated_heatmap.html
 def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
                      textcolors=("black", "white"),
                      threshold=None, **textkw):
@@ -266,50 +267,62 @@ def gui(json_dict):
     sector_count = int(state['max_pos'], base=16) - 1
     print(f'sector_count: {sector_count}')
 
-    heatmap, X, Y = create_init_heatmap(sector_count)
-    print(f'X = {X}, Y = {Y}')
-
-    # fill heatmap with values from erase_counts JSON
-    # index with sector num but in 2D
-    #TODO handle no erase counts for base
-    for sector_num_str, erase_count_str in erase_counts.items():
-        sector_num = int(sector_num_str)
-        erase_count = int(erase_count_str)
-        # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
-        heatmap[sector_num // X][sector_num % X] = 16 * erase_count
-
     # create a layout for left column listing info from config and state structs
     left_layout = create_config_state_layout(wl_mode, config, state)
 
-    # layout for graph, will draw later
-    graph_layout = [[sg.Canvas(key='-CANVAS-')]]
+    # create and initialize heatmap to fit given sector count
+    heatmap, X, Y = create_init_heatmap(sector_count)
+    print(f'X = {X}, Y = {Y}')
 
-    # layout for buttons, use constants for names as they become action names also
-    TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
-    EXPORT_PLOTLY_HTML = 'Export Plotly'
-    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+    if wl_mode == 'advanced':
+        # fill heatmap with values from erase_counts JSON
+        # index with sector num but in 2D
+        for sector_num_str, erase_count_str in erase_counts.items():
+            sector_num = int(sector_num_str)
+            erase_count = int(erase_count_str)
+            # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
+            heatmap[sector_num // X][sector_num % X] = 16 * erase_count
+
+
+        # layout for graph, will draw later
+        graph_layout = [[sg.Canvas(key='-CANVAS-')]]
+
+        # layout for buttons, use constants for names as they become action names also
+        TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
+        EXPORT_PLOTLY_HTML = 'Export Plotly'
+        buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+
+        # create matplotlib figure
+        fig, ax = plt.subplots()
+        # choose plasma color palette with extremes (set below using vmin, vmax)
+        palette = plt.cm.plasma.with_extremes(over='red', under='black')
+
+        #TODO settable?
+        CRITICAL_ERASE_THRESHOLD = 100
+        # create lists of hex labels for ticks for both rows (Y) and cols (Y)
+        row_labels = [hex(x) for x in range(X)]
+        col_labels = [hex(y) for y in range(Y)]
+        # plot the heatmap, set vmin, vmax limits for extremes that will be colored as set above in with_extremes()
+        im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0, vmax=CRITICAL_ERASE_THRESHOLD)
+
+        # annotate individual positions with erase counts formatted to display thousands as multiple of K
+        annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
+        # improves spacing of stuff in fig a bit
+        fig.tight_layout()
+    else:
+        # for base WL, make the rest of layouts empty
+        graph_layout = [[]]
+        buttons_layout = [[]]
 
     # overall layout with three columns
     layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(buttons_layout)]]
 
-    # plot the heatmap
-    fig, ax = plt.subplots()
-    palette = plt.cm.plasma.with_extremes(over='red', bad='black')
-    #TODO awful things because I'm using the heatmap with integers and NaN is float type
-    #so gotta keep it float and only convert to int when showing in annotations, somehow?
-    masked_heatmap = np.ma.masked_where(heatmap < 0, heatmap)
-    im, _ = create_heatmap(masked_heatmap, [hex(x) for x in range(X)], [hex(y) for y in range(Y)], ax=ax, cbarlabel='erase count', cmap=palette)
-
-    # annotate individual positions with erase counts formatted to display thousands as multiple of K
-    annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
-    # improves spacing of stuff in fig a bit
-    fig.tight_layout()
-
     # create window
     window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
 
-    # drag the heatmap
-    canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
+    if wl_mode == 'advanced':
+        # draw the heatmap
+        canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
 
     # main event loop for the window
     while True:
@@ -321,7 +334,10 @@ def gui(json_dict):
                 annotation.set_visible(not annotation.get_visible())
             canvas.draw()
         if event == EXPORT_PLOTLY_HTML:
-            #TODO custom hovertext
+            # disable button and change text to reflect heatmap is being generated
+            window[EXPORT_PLOTLY_HTML].update(disabled=True, text='Generating heatmap...')
+            window.refresh()
+
             px_heatmap = px.imshow(heatmap, text_auto=True)
             px_heatmap.update_layout(xaxis=dict(tickmode='linear'), yaxis=dict(tickmode='linear'))
 
@@ -329,6 +345,10 @@ def gui(json_dict):
             y_values = range(len(heatmap))
             hover_labels = [[f'sector_num={y*X + x}, erase_count={heatmap[y][x]}' for x in x_values] for y in y_values]
             px_heatmap.update_traces(hovertemplate='%{customdata}<extra></extra>', customdata=hover_labels, text=heatmap)
+
+            # once heatmap is ready to be saved, revert button to original state
+            window[EXPORT_PLOTLY_HTML].update(disabled=False, text=EXPORT_PLOTLY_HTML)
+            window.refresh()
 
             filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
             if filename is not None:
