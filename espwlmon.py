@@ -205,15 +205,25 @@ def make_text_vertical(text):
         vertical += f'{l}\n'
     return vertical
 
+#TODO global list, better solution?
+#TODO feitel keys empty space in input, why?
+selectable_texts_keys = list()
+def selectable_text(text):
+    # create unique key for the text from current length of list and the text itself, ensuring identical texts will have different keys
+    selectable_texts_keys.append(f'{len(selectable_texts_keys)}:{text}')
+    # return disabled input element with given text, appropriate size and indexable by created key
+    return [[sg.InputText(text, size=(len(text), 1), use_readonly_for_disable=True, disabled=True, key=selectable_texts_keys[-1])]]
+
 def create_mode_config_state_layout(wl_mode, config, state):
-    layout = [[sg.T(f'wl_mode: {wl_mode}')]]
+    layout = [[]]
+    layout += selectable_text(f'wl_mode: {wl_mode}')
     layout += [[sg.HorizontalSeparator()]]
 
     config_header = [[sg.T(make_text_vertical('CONFIG'))]]
 
     config_content = [[]]
     for key in config:
-        config_content += [[sg.T(f'{key}: {config[key]}')]]
+        config_content += selectable_text(f'{key}: {config[key]}')
 
     config_layout = [[sg.Column(config_header), sg.Column(config_content)]]
 
@@ -224,7 +234,7 @@ def create_mode_config_state_layout(wl_mode, config, state):
 
     state_content = [[]]
     for key in state:
-        state_content += [[sg.T(f'{key}: {state[key]}')]]
+        state_content += selectable_text(f'{key}: {state[key]}')
 
     state_layout = [[sg.Column(state_header), sg.Column(state_content)]]
 
@@ -251,7 +261,7 @@ def create_erase_count_heatmap(sector_count):
     # 2D heatmap to contain all integer sector counts, init with zeros
     heatmap = np.zeros((X, Y), dtype=int)
     # write an invalid erase count of -1 to positions that are in the heatmap
-    # yet are not valid sectors (e.g. 248-256)
+    # yet are not valid sectors
     for i in range(sector_count, X*Y):
         heatmap[i // X][i % X] = -1
 
@@ -309,7 +319,7 @@ def plot_erase_count_heatmap(erase_counts, sector_count):
         heatmap[sector_num // X][sector_num % X] = 16 * erase_count
     # create matplotlib figure
     fig, ax = plt.subplots()
-    # choose plasma color palette with extremes (set below using vmin, vmax)
+    # choose plasma color palette with extremes (set below using vmin)
     palette = plt.cm.plasma.with_extremes(under='black')
 
     # create lists of hex labels for ticks for both rows (Y) and cols (Y)
@@ -326,7 +336,7 @@ def plot_erase_count_heatmap(erase_counts, sector_count):
     return heatmap, fig, ax
 
 def create_error_layout(json_dict, message='WLmon reports'):
-    layout = [[sg.T(f'{message}: {json_dict}\nRun idf.py monitor on wlmon with verbose logging enabled to learn more')]]
+    layout = [[sg.T(f'{message}: {json_dict}\nRun idf.py monitor on wlmon (with verbose logging enabled) to learn more')]]
     return layout
 
 #TODO launch GUI before getting JSON with a loading screen
@@ -353,6 +363,10 @@ def gui(json_dict):
     if wl_mode == 'advanced':
         # draw the heatmap
         canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
+
+    # set zero border width for all inputs that are read only to mock selectable texts
+    for key in selectable_texts_keys:
+        window[key].Widget.config(borderwidth=0)
 
     # main event loop for the window
     while True:
