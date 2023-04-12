@@ -252,16 +252,14 @@ def create_init_heatmap(sector_count):
 
     return heatmap, X, Y
 
-#TODO launch GUI before getting JSON with a loading screen
-def gui(json_dict):
-    sg.theme('Gray Gray Gray')
-    sg.set_options(font=('Roboto', 11))
+TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
+EXPORT_PLOTLY_HTML = 'Export Plotly'
 
-    if 'erase_counts' in json_dict:
-        erase_counts = json_dict.pop('erase_counts')
-        print(f'erase_counts: {erase_counts}')
-
+def create_advanced_layout(json_dict):
     wl_mode = json_dict.pop('wl_mode')
+    erase_counts = json_dict.pop('erase_counts')
+    print(f'erase_counts: {erase_counts}')
+
     config = json_dict.pop('config')
     state = json_dict.pop('state')
     sector_count = int(state['max_pos'], base=16) - 1
@@ -270,50 +268,79 @@ def gui(json_dict):
     # create a layout for left column listing info from config and state structs
     left_layout = create_config_state_layout(wl_mode, config, state)
 
+    # layout for graph, will draw later
+    graph_layout = [[sg.Canvas(key='-CANVAS-')]]
+
+    # layout for buttons, use constants for names as they become action names also
+    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+
+    # overall layout with three columns
+    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(buttons_layout)]]
+
+    heatmap, fig, ax = plot_erase_count_heatmap(erase_counts, sector_count)
+
+    return layout, heatmap, fig, ax
+
+def create_base_layout(json_dict):
+    wl_mode = json_dict.pop('wl_mode')
+    config = json_dict.pop('config')
+    state = json_dict.pop('state')
+
+    layout = create_config_state_layout(wl_mode, config, state)
+
+    return layout
+
+def plot_erase_count_heatmap(erase_counts, sector_count):
     # create and initialize heatmap to fit given sector count
     heatmap, X, Y = create_init_heatmap(sector_count)
     print(f'X = {X}, Y = {Y}')
 
-    if wl_mode == 'advanced':
-        # fill heatmap with values from erase_counts JSON
-        # index with sector num but in 2D
-        for sector_num_str, erase_count_str in erase_counts.items():
-            sector_num = int(sector_num_str)
-            erase_count = int(erase_count_str)
-            # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
-            heatmap[sector_num // X][sector_num % X] = 16 * erase_count
+    # fill heatmap with values from erase_counts JSON
+    # index with sector num but in 2D
+    for sector_num_str, erase_count_str in erase_counts.items():
+        sector_num = int(sector_num_str)
+        erase_count = int(erase_count_str)
+        # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
+        heatmap[sector_num // X][sector_num % X] = 16 * erase_count
+    # create matplotlib figure
+    fig, ax = plt.subplots()
+    # choose plasma color palette with extremes (set below using vmin, vmax)
+    palette = plt.cm.plasma.with_extremes(under='black')
 
+    # create lists of hex labels for ticks for both rows (Y) and cols (Y)
+    row_labels = [hex(x) for x in range(X)]
+    col_labels = [hex(y) for y in range(Y)]
+    # plot the heatmap, set vmin, vmax limits for extremes that will be colored as set above in with_extremes()
+    im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0)
 
-        # layout for graph, will draw later
-        graph_layout = [[sg.Canvas(key='-CANVAS-')]]
+    # annotate individual positions with erase counts formatted to display thousands as multiple of K
+    annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
+    # improves spacing of stuff in fig a bit
+    fig.tight_layout()
 
-        # layout for buttons, use constants for names as they become action names also
-        TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
-        EXPORT_PLOTLY_HTML = 'Export Plotly'
-        buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+    return heatmap, fig, ax
 
-        # create matplotlib figure
-        fig, ax = plt.subplots()
-        # choose plasma color palette with extremes (set below using vmin, vmax)
-        palette = plt.cm.plasma.with_extremes(under='black')
+def create_error_layout(json_dict, message='WLmon reports'):
+    layout = [[sg.T(f'{message}: {json_dict}\nRun idf.py monitor on wlmon with verbose logging enabled to learn more')]]
+    return layout
 
-        # create lists of hex labels for ticks for both rows (Y) and cols (Y)
-        row_labels = [hex(x) for x in range(X)]
-        col_labels = [hex(y) for y in range(Y)]
-        # plot the heatmap, set vmin, vmax limits for extremes that will be colored as set above in with_extremes()
-        im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0)
+#TODO launch GUI before getting JSON with a loading screen
+def gui(json_dict):
+    sg.theme('Gray Gray Gray')
+    sg.set_options(font=('Roboto', 11))
 
-        # annotate individual positions with erase counts formatted to display thousands as multiple of K
-        annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
-        # improves spacing of stuff in fig a bit
-        fig.tight_layout()
+    wl_mode = 'undefined'
+
+    if 'wl_mode' in json_dict:
+        wl_mode = json_dict['wl_mode']
+        if wl_mode == 'advanced':
+            layout, heatmap, fig, ax = create_advanced_layout(json_dict)
+        else:
+            layout = create_base_layout(json_dict)
+    elif 'error' in json_dict:
+        layout = create_error_layout(json_dict)
     else:
-        # for base WL, make the rest of layouts empty
-        graph_layout = [[]]
-        buttons_layout = [[]]
-
-    # overall layout with three columns
-    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(buttons_layout)]]
+        layout = create_error_layout(json_dict, 'Unknown JSON received')
 
     # create window
     window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
