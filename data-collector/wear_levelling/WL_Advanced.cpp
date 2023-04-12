@@ -148,9 +148,6 @@ esp_err_t WL_Advanced::init()
         // both CRCs invalid => new instance of WL
         result = this->initSections();
         WL_RESULT_CHECK(result);
-        //TODO needed?
-        result = this->recoverPos();
-        WL_RESULT_CHECK(result);
     } else {
         // recover broken state (one CRC invalid)
         if (crc1 == state_main->crc) {
@@ -195,8 +192,6 @@ esp_err_t WL_Advanced::init()
     ESP_LOGI(TAG, "%s: pos=%u, max_pos=%u", __func__, state_main->pos, state_main->max_pos);
 
     // allocate buffer to store 2B number for each sector's erase count
-    //TODO max_pos is 1 bigger than sector count, utilize, ignore or make buffer one uint16_t smaller?
-    // would need to properly check all indexing
     this->erase_count_buffer_size = state_main->max_pos * sizeof(uint16_t);
     this->erase_count_buffer = (uint16_t *)malloc(this->erase_count_buffer_size);
     if (this->erase_count_buffer == NULL) {
@@ -416,7 +411,6 @@ esp_err_t WL_Advanced::updateEraseCounts()
     return result;
 }
 
-// TODO same technique for keeping both copies OK as in init?
 esp_err_t WL_Advanced::readEraseCounts()
 {
     esp_err_t result = ESP_OK;
@@ -550,27 +544,15 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
         // write main state
         this->state.crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)&this->state, WL_STATE_CRC_LEN_V2);
 
-        //TODO if either writeEraseCounts() fails, erase counts ARE NOT to be updated again
-        // before erasing at addr_state1/2, so just let it fail and continue?
-        // or somehow mark they have been updated?
-        // what about the spare uint16_t as there are only (max_pos-1) sectors?
-
         // tally up overall per sector erase counts
         result = this->updateEraseCounts();
+        WL_RESULT_CHECK(result);
         // and write updated values to flash
-        result |= this->writeEraseCounts(this->addr_erase_counts1);
-        if (result != ESP_OK) {
-            ESP_LOGE(TAG, "%s - write erase counts 1. copy result=0x%x", __func__, result);
-            this->state.access_count = this->state.max_count - 1;
-            return result;
-        }
+        result = this->writeEraseCounts(this->addr_erase_counts1);
+        WL_RESULT_CHECK(result);
         // also a second copy
         result = this->writeEraseCounts(this->addr_erase_counts2);
-        if (result != ESP_OK) {
-            ESP_LOGE(TAG, "%s - write erase counts 2. copy result=0x%x", __func__, result);
-            this->state.access_count = this->state.max_count - 1;
-            return result;
-        }
+        WL_RESULT_CHECK(result);
 
         result = this->flash_drv->erase_range(this->addr_state1, this->state_size);
         WL_RESULT_CHECK(result);
@@ -609,11 +591,7 @@ size_t WL_Advanced::addressFeistelNetwork(size_t addr)
     // |<-B/2->|<-B/2-> |
     // |  MSB  |  LSB   |
 
-    // mask for full sector address
-    uint32_t B_mask = ~( (~(size_t)0) << feistel_bit_width );
-
     uint32_t LSB_mask = ~( (~(size_t)0) << feistel_lsb_width );
-    //uint32_t MSB_mask = ( (~(size_t)0) << feistel_lsb_width ) & B_mask;
 
     uint32_t msb, lsb, _msb, _lsb, randomized_sector_addr;
 
