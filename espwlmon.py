@@ -205,7 +205,7 @@ def make_text_vertical(text):
         vertical += f'{l}\n'
     return vertical
 
-def create_config_state_layout(wl_mode, config, state):
+def create_mode_config_state_layout(wl_mode, config, state):
     layout = [[sg.T(f'wl_mode: {wl_mode}')]]
     layout += [[sg.HorizontalSeparator()]]
 
@@ -232,7 +232,7 @@ def create_config_state_layout(wl_mode, config, state):
 
     return layout
 
-def create_init_heatmap(sector_count):
+def calculate_heatmap_dimensions(sector_count):
     # calculate heatmap side lengths for given sector_count
     # e.g. 248 sector fit in a X=16, Y=16 square
     # this introduces invalid positions in the heatmap, from sector count up to X*Y
@@ -242,6 +242,11 @@ def create_init_heatmap(sector_count):
         X += 1
         Y = math.ceil(sector_count / X)
 
+    return X, Y
+
+def create_erase_count_heatmap(sector_count):
+
+    X, Y = calculate_heatmap_dimensions(sector_count)
 
     # 2D heatmap to contain all integer sector counts, init with zeros
     heatmap = np.zeros((X, Y), dtype=int)
@@ -250,7 +255,7 @@ def create_init_heatmap(sector_count):
     for i in range(sector_count, X*Y):
         heatmap[i // X][i % X] = -1
 
-    return heatmap, X, Y
+    return heatmap
 
 TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
 EXPORT_PLOTLY_HTML = 'Export Plotly'
@@ -266,7 +271,7 @@ def create_advanced_layout(json_dict):
     print(f'sector_count: {sector_count}')
 
     # create a layout for left column listing info from config and state structs
-    left_layout = create_config_state_layout(wl_mode, config, state)
+    left_layout = create_mode_config_state_layout(wl_mode, config, state)
 
     # layout for graph, will draw later
     graph_layout = [[sg.Canvas(key='-CANVAS-')]]
@@ -286,14 +291,14 @@ def create_base_layout(json_dict):
     config = json_dict.pop('config')
     state = json_dict.pop('state')
 
-    layout = create_config_state_layout(wl_mode, config, state)
+    layout = create_mode_config_state_layout(wl_mode, config, state)
 
     return layout
 
 def plot_erase_count_heatmap(erase_counts, sector_count):
     # create and initialize heatmap to fit given sector count
-    heatmap, X, Y = create_init_heatmap(sector_count)
-    print(f'X = {X}, Y = {Y}')
+    heatmap = create_erase_count_heatmap(sector_count)
+    X, Y = calculate_heatmap_dimensions(sector_count)
 
     # fill heatmap with values from erase_counts JSON
     # index with sector num but in 2D
@@ -366,8 +371,9 @@ def gui(json_dict):
             px_heatmap = px.imshow(heatmap, text_auto=True)
             px_heatmap.update_layout(xaxis=dict(tickmode='linear'), yaxis=dict(tickmode='linear'))
 
-            x_values = range(len(heatmap[0]))
-            y_values = range(len(heatmap))
+            X, Y = heatmap.shape
+            x_values = np.arange(X)
+            y_values = np.arange(Y)
             hover_labels = [[f'sector_num={y*X + x}, erase_count={heatmap[y][x]}' for x in x_values] for y in y_values]
             px_heatmap.update_traces(hovertemplate='%{customdata}<extra></extra>', customdata=hover_labels, text=heatmap)
 
@@ -378,7 +384,7 @@ def gui(json_dict):
             filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
             if filename is not None:
                 px_heatmap.write_html(filename)
-                popup_toast(window, 'Plotly heatmap exported successfuly')
+                popup_toast(window, 'Plotly heatmap exported successfully')
 
     window.close()
 
