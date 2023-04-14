@@ -20,13 +20,13 @@ extern uint32_t feistel_cycle_walks;
 // {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
 #define ZERO_ADDR 0
 // {0,1} enable feistel network address randomization
-#define FEISTEL 0
+#define FEISTEL 1
 // number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
 #define ITERATIONS 25000000
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
 // block size of consecutive sectors erased per iteration
-#define ERASE_BLOCK 10
+#define ERASE_BLOCK 20
 
 // restart after each erase range, in per mille
 // 0 disables random restarting
