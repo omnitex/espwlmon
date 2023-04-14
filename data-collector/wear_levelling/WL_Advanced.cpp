@@ -428,6 +428,7 @@ esp_err_t WL_Advanced::readEraseCounts()
     // go through saved erase counts in flash in this format
     // | sector | erase count | sector | erase count | sector | erase count | crc |
     // and save the counts to buffer, indexing by sector
+    // TODO max i should be max_pos/3? as we save triplets for sector erase counts
     for (uint32_t i = 0; i < this->state.max_pos; i++) {
         result = this->flash_drv->read(this->addr_erase_counts1 + i * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
         WL_RESULT_CHECK(result);
@@ -435,16 +436,15 @@ esp_err_t WL_Advanced::readEraseCounts()
         uint32_t crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
 
         if (crc != erase_count_buff->crc) {
-            ESP_LOGW(TAG, "%s: first copy of erase counts is invalid at pos %u", __func__, i);
+            ESP_LOGI(TAG, "%s: first copy of erase counts is invalid at pos %u", __func__, i);
             // first copy has invalid CRC, check the second copy
             result = this->flash_drv->read(this->addr_erase_counts2 + i * sizeof(wl_erase_count_t), erase_count_buff, sizeof(wl_erase_count_t));
             WL_RESULT_CHECK(result);
 
             crc = crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)erase_count_buff, offsetof(wl_erase_count_t, crc));
             if (crc != erase_count_buff->crc) {
-                ESP_LOGE(TAG, "%s: second copy also invalid at pos %u", __func__, i);
-                // also invalid, cannot recover
-                return ESP_ERR_INVALID_STATE;
+                ESP_LOGI(TAG, "%s: second copy also invalid at pos %u => assume the end of erase count records", __func__, i);
+                return ESP_OK;
             }
         }
 

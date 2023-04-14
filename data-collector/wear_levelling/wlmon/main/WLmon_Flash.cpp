@@ -29,26 +29,9 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
 {
     esp_err_t result = ESP_OK;
 
-    this->flash_drv = flash_drv;
-
-    memcpy(&this->cfg, cfg, sizeof(wl_config_t));
-
-    // calculating state_size 
-    // first, assume only 1 sector is needed
-    this->state_size = this->cfg.sector_size;
-    if (this->state_size < (sizeof(wl_state_t) + (this->cfg.full_mem_size / this->cfg.sector_size) * this->cfg.wr_size)) {
-        // memory needed to fit wl_state_t + pos updates for all sectors in partition exceeds 1 sector
-        this->state_size = ((sizeof(wl_state_t) + (this->cfg.full_mem_size / this->cfg.sector_size) * this->cfg.wr_size) + this->cfg.sector_size - 1) / this->cfg.sector_size;
-        this->state_size = this->state_size * this->cfg.sector_size;
-    }
-
-    // config should always fit into a single sector, but calculate size aligned to sector that is needed
-    this->cfg_size = (sizeof(wl_config_t) + this->cfg.sector_size - 1) / this->cfg.sector_size;
-    this->cfg_size = this->cfg_size * this->cfg.sector_size;
-
-    // wl_state_t at the end of memory in two copies
-    this->addr_state1 = this->cfg.start_addr + this->cfg.full_mem_size - this->state_size * 2 - this->cfg_size;
-    this->addr_state2 = this->cfg.start_addr + this->cfg.full_mem_size - this->state_size * 1 - this->cfg_size;
+    // let advanced config calculate needed values and addresses
+    result = WL_Advanced::config(cfg, flash_drv);
+    WL_RESULT_CHECK(result);
 
     // read state structure
     result = this->flash_drv->read(this->addr_state1, &this->state, sizeof(wl_state_t));
