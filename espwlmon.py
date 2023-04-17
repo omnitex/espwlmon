@@ -197,9 +197,9 @@ def format_thousands(num, _):
     else:
         return str(num)
 
-def popup_toast(window, message, duration=2000):
-    toast_layout = [[sg.Text(message, pad=(20,10))]]
-    toast_window = sg.Window('', toast_layout, keep_on_top=True, no_titlebar=True, alpha_channel=.8, finalize=True)
+def popup_toast(window, message, duration=2000, background_color='light gray'):
+    toast_layout = [[sg.Text(message, pad=(20,10), background_color=background_color)]]
+    toast_window = sg.Window('', toast_layout, keep_on_top=True, no_titlebar=True, alpha_channel=.8, finalize=True, background_color=background_color)
     # one-shot centering of toast to the center of parent window, does not track movement after that
     toast_window.move(window.current_location()[0] + window.size[0] // 2 - toast_window.size[0] // 2, window.current_location()[1] + window.size[1] // 2 - toast_window.size[1] // 2)
     toast_window.TKroot.after(duration, toast_window.close)
@@ -213,11 +213,11 @@ def make_text_vertical(text):
 #TODO global list, better solution?
 #TODO feitel keys empty space in input, why?
 selectable_texts_keys = list()
-def selectable_text(text):
+def selectable_text(text, text_color='black'):
     # create unique key for the text from current length of list and the text itself, ensuring identical texts will have different keys
     selectable_texts_keys.append(f'{len(selectable_texts_keys)}:{text}')
     # return disabled input element with given text, appropriate size and indexable by created key
-    return [[sg.InputText(text, size=(len(text), 1), use_readonly_for_disable=True, disabled=True, key=selectable_texts_keys[-1])]]
+    return [[sg.InputText(text, size=(len(text), 1), text_color=text_color, use_readonly_for_disable=True, disabled=True, key=selectable_texts_keys[-1])]]
 
 def create_mode_config_state_layout(wl_mode, config, state):
     layout = [[]]
@@ -283,7 +283,25 @@ def create_advanced_layout(json_dict):
     config = json_dict.pop('config')
     state = json_dict.pop('state')
     sector_count = int(state['max_pos'], base=16) - 1
-    print(f'sector_count: {sector_count}')
+
+    updaterate = int(config['updaterate'], base=16)
+
+    # calculate overall erase count from records
+    overall_ec_records = 0
+    for ec in erase_counts:
+        overall_ec_records += updaterate * int(erase_counts[ec])
+
+    # and overall erase count from recovered pos, move_count and cycle_count
+    pos = int(state['pos'], base=16)
+    max_pos = int(state['max_pos'], base=16)
+    move_count = int(state['move_count'], base=16)
+    cycle_count = int(state['cycle_count'], base=16)
+    print(f'updaterate: {updaterate}, pos: {pos}, max_pos: {max_pos}, move_count: {move_count}, cycle_count: {cycle_count}')
+
+    # calculate the erase count in multiple steps
+    overall_ec_pos_mc_cc = pos * updaterate
+    overall_ec_pos_mc_cc += move_count * max_pos * updaterate
+    overall_ec_pos_mc_cc += cycle_count * max_pos * (max_pos - 1) * updaterate
 
     # create a layout for left column listing info from config and state structs
     left_layout = create_mode_config_state_layout(wl_mode, config, state)
@@ -294,10 +312,24 @@ def create_advanced_layout(json_dict):
     # layout for buttons, use constants for names as they become action names also
     buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
 
-    # overall layout with three columns
-    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(buttons_layout)]]
+    right_layout = [[]]
+    right_layout += selectable_text(f'Sector count: {sector_count}')
 
-    heatmap, fig, ax = plot_erase_count_heatmap(erase_counts, sector_count)
+    # if reconstructed erase counts mismatch, show the greater value just to be safe
+    if overall_ec_records != overall_ec_pos_mc_cc:
+        right_layout += selectable_text('Warning: Erase count reconstruction mismatch!', text_color='red')
+        right_layout += selectable_text(f'Overall erase count: <= {max(overall_ec_records, overall_ec_pos_mc_cc)}')
+    else:
+        # else if they are equal, show one value
+        right_layout += selectable_text(f'Overall erase count: {overall_ec_records}')
+
+    right_layout += [[sg.HorizontalSeparator()]]
+    right_layout += buttons_layout
+
+    # overall layout with three columns
+    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(right_layout)]]
+
+    heatmap, fig, ax = plot_erase_count_heatmap(erase_counts, sector_count, updaterate)
 
     return layout, heatmap, fig, ax
 
@@ -310,7 +342,7 @@ def create_base_layout(json_dict):
 
     return layout
 
-def plot_erase_count_heatmap(erase_counts, sector_count):
+def plot_erase_count_heatmap(erase_counts, sector_count, updaterate):
     # create and initialize heatmap to fit given sector count
     heatmap = create_erase_count_heatmap(sector_count)
     X, Y = calculate_heatmap_dimensions(sector_count)
@@ -320,8 +352,8 @@ def plot_erase_count_heatmap(erase_counts, sector_count):
     for sector_num_str, erase_count_str in erase_counts.items():
         sector_num = int(sector_num_str)
         erase_count = int(erase_count_str)
-        # every erase count means 16 erases, as that is the threshold for triggering writing a record to flash
-        heatmap[sector_num // X][sector_num % X] = 16 * erase_count
+        # every erase count means updaterate erases, as that is the threshold for triggering writing a record to flash
+        heatmap[sector_num // X][sector_num % X] = updaterate * erase_count
     # create matplotlib figure
     fig, ax = plt.subplots()
     # choose plasma color palette with extremes (set below using vmin)
