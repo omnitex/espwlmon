@@ -24,5 +24,15 @@ size_t zipf(size_t max_addr);
  */
 size_t linear(size_t max_addr);
 
+/*
+ * Just returns the block given as argument
+ */
+size_t block_constant(size_t erase_block);
+
+/*
+ * Zipf distribution for <1, erase_block>
+ */
+size_t block_zipf(size_t erase_block);
+
 #endif
 

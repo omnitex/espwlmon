@@ -13,8 +13,6 @@ extern size_t access_count;
 extern size_t move_count;
 extern uint32_t feistel_cycle_walks;
 
-//TODO parameters like this or arguments? or file?
-
 // {constant,uniform,zipf,linear}
 #define ADDRESS_FUNCTION zipf
 // {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
@@ -25,13 +23,16 @@ extern uint32_t feistel_cycle_walks;
 #define ITERATIONS 25000000
 // {0,1} enable per sector verbose erase count logs
 #define VERBOSE_ERASE_COUNTS 0
+// {block_constant, block_zipf}
+#define BLOCK_SIZE_FUNCTION block_constant
 // block size of consecutive sectors erased per iteration
 #define ERASE_BLOCK 20
+// 0x1000 == 4K == full sector
+#define ERASE_SIZE (0x1000)
 
 // restart after each erase range, in per mille
 // 0 disables random restarting
 #define RESTART_PROBABILITY 0
-#define ERASE_SIZE (0x1000)
 
 int main()
 {
@@ -99,7 +100,7 @@ int main()
 
     for (size_t i = 0; i < ITERATIONS; i++) {
 
-        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE * ERASE_BLOCK);
+        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE * BLOCK_SIZE_FUNCTION(ERASE_BLOCK));
 
         if (result != ESP_OK)
             break;
