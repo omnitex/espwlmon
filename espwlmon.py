@@ -35,10 +35,12 @@ def monitor(port):
             if json_dict is None:
                 # first JSON load
                 json_dict = json.loads(json_line)
+                print("JSON received")
             else:
                 # JSON already loaded, check next load produces same JSON
                 if (json_dict != json.loads(json_line)):
                     # they differ, save the newly loaded
+                    print("Warning: received JSON could not be confirmed, try again...")
                     json_dict = json.loads(json_line)
                 else:
                     # they are the same, break out of while
@@ -46,7 +48,7 @@ def monitor(port):
 
         except json.JSONDecodeError as json_decode_error:
             print(f"Error parsing received JSON: {json_decode_error.msg}")
-            context_characters = 15
+            context_characters = 20
             # given position of error, calculate left bound; if |0<->error| <= context_chars then start at zero, as we have less than or at max context_chars to the left
             # or if |0<->error| > context_chars then we have enough context to show; |0 ~~~ <-context_chars->error|
             context_start = 0 if json_decode_error.pos <= context_characters else (json_decode_error.pos - context_characters)
@@ -210,8 +212,6 @@ def make_text_vertical(text):
         vertical += f'{l}\n'
     return vertical
 
-#TODO global list, better solution?
-#TODO feitel keys empty space in input, why?
 selectable_texts_keys = list()
 def selectable_text(text, text_color='black'):
     # create unique key for the text from current length of list and the text itself, ensuring identical texts will have different keys
@@ -228,7 +228,8 @@ def create_mode_config_state_layout(wl_mode, config, state):
 
     config_content = [[]]
     for key in config:
-        config_content += selectable_text(f'{key}: {config[key]}')
+        value = f'{int(config[key], base=16)}'
+        config_content += selectable_text(f'{key}: {value}')
 
     config_layout = [[sg.Column(config_header), sg.Column(config_content)]]
 
@@ -239,7 +240,11 @@ def create_mode_config_state_layout(wl_mode, config, state):
 
     state_content = [[]]
     for key in state:
-        state_content += selectable_text(f'{key}: {state[key]}')
+        if key == 'feistel_keys':
+            value = f'{int(state[key][0], base=16), int(state[key][1], base=16), int(state[key][2], base=16)}'
+        else:
+            value = f'{int(state[key], base=16)}'
+        state_content += selectable_text(f'{key}: {value}')
 
     state_layout = [[sg.Column(state_header), sg.Column(state_content)]]
 
@@ -272,13 +277,12 @@ def create_erase_count_heatmap(sector_count):
 
     return heatmap
 
-TOGGLE_ERASE_COUNT_ANNOTATIONS = 'Toggle erase counts'
-EXPORT_PLOTLY_HTML = 'Export Plotly'
-
+TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY = 'Toggle erase counts'
+EXPORT_PLOTLY_HTML_BUTTON_KEY = 'Export Plotly'
 def create_advanced_layout(json_dict):
     wl_mode = json_dict.pop('wl_mode')
     erase_counts = json_dict.pop('erase_counts')
-    print(f'erase_counts: {erase_counts}')
+    #print(f'erase_counts: {erase_counts}')
 
     config = json_dict.pop('config')
     state = json_dict.pop('state')
@@ -296,7 +300,7 @@ def create_advanced_layout(json_dict):
     max_pos = int(state['max_pos'], base=16)
     move_count = int(state['move_count'], base=16)
     cycle_count = int(state['cycle_count'], base=16)
-    print(f'updaterate: {updaterate}, pos: {pos}, max_pos: {max_pos}, move_count: {move_count}, cycle_count: {cycle_count}')
+    #print(f'updaterate: {updaterate}, pos: {pos}, max_pos: {max_pos}, move_count: {move_count}, cycle_count: {cycle_count}')
 
     # calculate the erase count in multiple steps
     overall_ec_pos_mc_cc = pos * updaterate
@@ -310,7 +314,7 @@ def create_advanced_layout(json_dict):
     graph_layout = [[sg.Canvas(key='-CANVAS-')]]
 
     # layout for buttons, use constants for names as they become action names also
-    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS)],[sg.B(EXPORT_PLOTLY_HTML)]]
+    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY)],[sg.B(EXPORT_PLOTLY_HTML_BUTTON_KEY)]]
 
     right_layout = [[]]
     right_layout += selectable_text(f'Sector count: {sector_count}')
@@ -376,7 +380,6 @@ def create_error_layout(json_dict, message='WLmon reports'):
     layout = [[sg.T(f'{message}: {json_dict}\nRun idf.py monitor on wlmon (with verbose logging enabled) to learn more')]]
     return layout
 
-#TODO launch GUI before getting JSON with a loading screen
 def gui(json_dict):
     sg.theme('Gray Gray Gray')
     sg.set_options(font=('Roboto', 11))
@@ -410,13 +413,13 @@ def gui(json_dict):
         event, values = window.read()
         if event in (sg.WIN_CLOSED, 'Exit'):
             break
-        if event == TOGGLE_ERASE_COUNT_ANNOTATIONS:
+        if event == TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY:
             for annotation in ax.texts:
                 annotation.set_visible(not annotation.get_visible())
             canvas.draw()
-        if event == EXPORT_PLOTLY_HTML:
+        if event == EXPORT_PLOTLY_HTML_BUTTON_KEY:
             # disable button and change text to reflect heatmap is being generated
-            window[EXPORT_PLOTLY_HTML].update(disabled=True, text='Generating heatmap...')
+            window[EXPORT_PLOTLY_HTML_BUTTON_KEY].update(disabled=True, text='Generating heatmap...')
             window.refresh()
 
             px_heatmap = px.imshow(heatmap, text_auto=True)
@@ -429,7 +432,7 @@ def gui(json_dict):
             px_heatmap.update_traces(hovertemplate='%{customdata}<extra></extra>', customdata=hover_labels, text=heatmap)
 
             # once heatmap is ready to be saved, revert button to original state
-            window[EXPORT_PLOTLY_HTML].update(disabled=False, text=EXPORT_PLOTLY_HTML)
+            window[EXPORT_PLOTLY_HTML_BUTTON_KEY].update(disabled=False, text=EXPORT_PLOTLY_HTML_BUTTON_KEY)
             window.refresh()
 
             filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
