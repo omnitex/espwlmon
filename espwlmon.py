@@ -47,10 +47,15 @@ def monitor(port):
         except json.JSONDecodeError as json_decode_error:
             print(f"Error parsing received JSON: {json_decode_error.msg}")
             context_characters = 15
+            # given position of error, calculate left bound; if |0<->error| <= context_chars then start at zero, as we have less than or at max context_chars to the left
+            # or if |0<->error| > context_chars then we have enough context to show; |0 ~~~ <-context_chars->error|
+            context_start = 0 if json_decode_error.pos <= context_characters else (json_decode_error.pos - context_characters)
+            # similar logic for right bound, if |error<->json_line_end} <= context_chars then we have at max context_chars to the right, set bound to end of string
+            # or if |error<->json_line_end| > context_chars, we only show context chars - |error<-context_chars->| to the right
+            context_end = (len(json_line) - 1) if (len(json_line) - json_decode_error.pos) <= context_characters else (json_decode_error.pos + context_characters)
             # print the context of error with characters around and arrow on next line pointing to the exact position
-            #TODO this does not seem to work?
-            print(f"{json_line[json_decode_error.pos-context_characters:json_decode_error.pos+context_characters]}")
-            print(' ' * context_characters, '^', ' ' * context_characters, sep='')
+            print(f"{json_line[context_start:context_end]}")
+            print('-' * context_characters, '^', ' ' * context_characters, sep='')
             serial_port.close()
             return
 
