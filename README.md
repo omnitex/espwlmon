@@ -2,7 +2,7 @@
 
 Tool for reading the status of wear leveling layer in flash memories in ESP32-xx SoCs, modules and boards.
 
-Project includes an extended version of [base wear leveling](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/wear-levelling.html) which makes possible long term tracking of per sector erase counts and improves leveling evenness by address mapping randomization based on 3-stage unbalanced Feistel network.
+Project includes an extended version of [base wear leveling](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/storage/wear-levelling.html) which makes possible long term tracking of per sector erase counts and improves leveling evenness by address mapping randomization using format preserving encryption based on unbalanced 3-stage Feistel network.
 
 ## Installation and usage
 
@@ -27,7 +27,7 @@ $ cp -r data-collector/wear_levelling/ $IDF_PATH/components/
 $ idf.py erase-flash
 ```
 
-This will allow `WL_Advanced` to initialize all structures in flash from a clean state
+This will allow `WL_Advanced` to initialize all structures in flash from a clean state.
 
 ### 2a. Test with `erase_stress_example`
 

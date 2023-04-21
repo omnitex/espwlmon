@@ -31,10 +31,10 @@ static const char *example_text = "Written in erase_stress_example testing WL_Ad
 static wl_handle_t s_wl_handle = WL_INVALID_HANDLE;
 
 // number of erases performed in one stress run
-static const unsigned int erase_iterations = 1000;
+static const unsigned int erase_iterations = 500;
 
 // number of full runs of FATFS test + stressing to run
-static const unsigned int full_runs = 10;
+static const unsigned int full_runs = 20;
 
 static esp_err_t run_erase_stressing(const esp_partition_t *storage)
 {
