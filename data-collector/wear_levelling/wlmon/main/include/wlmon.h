@@ -1,5 +1,4 @@
-#ifndef _WLMON_H_
-#define _WLMON_H_
+#pragma once
 
 #include "WL_Flash.h"
 #include "WL_Advanced.h"
@@ -94,5 +93,3 @@ private:
  *       - various ESP_ERR_* otherwise
 */
 esp_err_t wlmon_get_status(char **buffer);
-
-#endif // #ifndef _WLMON_H_

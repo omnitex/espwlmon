@@ -46,7 +46,7 @@ esp_err_t WLmon_Flash::reconstruct(wl_config_t *cfg, Flash_Access *flash_drv)
     // in advanced, Feistel keys are obviously non-zero
     if (advanced_state->feistel_keys != 0) {
         this->wl_mode = WL_MODE_ADVANCED;
-    // in base, they are in reserved space which is set to 0
+        // in base, they are in reserved space which is set to 0
     } else {
         this->wl_mode = WL_MODE_BASE;
     }
@@ -137,11 +137,11 @@ esp_err_t WLmon_Flash::recoverPos()
 int WLmon_Flash::write_wl_config_json(char *s, size_t n)
 {
     int retval = snprintf(s, n,
-        "{\"start_addr\":\"0x%x\",\"full_mem_size\":\"0x%x\",\"page_size\":\"0x%x\",\
+                          "{\"start_addr\":\"0x%x\",\"full_mem_size\":\"0x%x\",\"page_size\":\"0x%x\",\
 \"sector_size\":\"0x%x\",\"updaterate\":\"0x%x\",\"wr_size\":\"0x%x\",\
 \"version\":\"0x%x\",\"temp_buff_size\":\"0x%x\",\"crc\":\"0x%x\"}",
-        this->cfg.start_addr, this->cfg.full_mem_size, this->cfg.page_size, this->cfg.sector_size,
-        this->cfg.updaterate, this->cfg.wr_size, this->cfg.version, this->cfg.temp_buff_size, this->cfg.crc);
+                          this->cfg.start_addr, this->cfg.full_mem_size, this->cfg.page_size, this->cfg.sector_size,
+                          this->cfg.updaterate, this->cfg.wr_size, this->cfg.version, this->cfg.temp_buff_size, this->cfg.crc);
 
     return retval;
 }
@@ -156,21 +156,21 @@ int WLmon_Flash::write_wl_state_json(char *s, size_t n)
         uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
 
         retval = snprintf(s, n,
-            "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
+                          "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
 \"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
 \"version\":\"0x%x\",\"device_id\":\"0x%x\",\"cycle_count\":\"0x%x\",\"feistel_keys\":[\"0x%x\",\"0x%x\",\"0x%x\"],\"crc\":\"0x%x\"}",
-            this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
-            this->state.max_count, this->state.block_size, this->state.version, this->state.device_id,
-            advanced_state->cycle_count, keys[0], keys[1], keys[2], this->state.crc);
+                          this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
+                          this->state.max_count, this->state.block_size, this->state.version, this->state.device_id,
+                          advanced_state->cycle_count, keys[0], keys[1], keys[2], this->state.crc);
 
     } else {
 
         retval = snprintf(s, n,
-            "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
+                          "{\"pos\":\"0x%x\",\"max_pos\":\"0x%x\",\"move_count\":\"0x%x\",\
 \"access_count\":\"0x%x\",\"max_count\":\"0x%x\",\"block_size\":\"0x%x\",\
 \"version\":\"0x%x\",\"device_id\":\"0x%x\",\"crc\":\"0x%x\"}",
-            this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
-            this->state.max_count, this->state.block_size, this->state.version, this->state.device_id, this->state.crc);
+                          this->state.pos, this->state.max_pos, this->state.move_count, this->state.access_count,
+                          this->state.max_count, this->state.block_size, this->state.version, this->state.device_id, this->state.crc);
     }
 
     return retval;
@@ -209,16 +209,16 @@ int WLmon_Flash::write_wl_mode_json(char *s, size_t n)
 {
     int retval;
 
-    switch(this->wl_mode) {
-        case WL_MODE_BASE:
-            retval = snprintf(s, n, "\"base\"");
-            break;
-        case WL_MODE_ADVANCED:
-            retval = snprintf(s, n, "\"advanced\"");
-            break;
-        default:
-            retval = snprintf(s, n, "\"undefined\"");
-            break;
+    switch (this->wl_mode) {
+    case WL_MODE_BASE:
+        retval = snprintf(s, n, "\"base\"");
+        break;
+    case WL_MODE_ADVANCED:
+        retval = snprintf(s, n, "\"advanced\"");
+        break;
+    default:
+        retval = snprintf(s, n, "\"undefined\"");
+        break;
     }
 
     return retval;
@@ -233,8 +233,9 @@ esp_err_t WLmon_Flash::resize_json_buffer(char **buffer, uint32_t *new_size)
     uint8_t ascii_digits;
 
     // calculate how many ASCII digits can sector number be at max
-    for (ascii_digits = 0; _sector_count; ascii_digits++)
+    for (ascii_digits = 0; _sector_count; ascii_digits++) {
         _sector_count = _sector_count / 10;
+    }
 
     // max len of one sector_num:erase_count pair in JSON
     uint8_t single_erase_count_len = sizeof("\"n\":\"100000\",") + ascii_digits;
@@ -243,13 +244,13 @@ esp_err_t WLmon_Flash::resize_json_buffer(char **buffer, uint32_t *new_size)
     uint32_t erase_counts_len = single_erase_count_len * sector_count;
 
     ESP_LOGV(TAG, "%s: sector_count=%u, ascii_digits=%u, ascii_erase_count=%u, erase_counts_json_max_len=%u",
-            __func__, sector_count, ascii_digits, single_erase_count_len, erase_counts_len);
+             __func__, sector_count, ascii_digits, single_erase_count_len, erase_counts_len);
 
     // default buff size for mode, config, state + enough for all erase counts
     _new_size = WLMON_DEFAULT_BUF_SIZE + erase_counts_len;
 
     // try to realloc to new size; so buffer fits whole WL status JSON including all erase counts
-    char *new_buffer = (char *) realloc((void*)*buffer, _new_size);
+    char *new_buffer = (char *) realloc((void *)*buffer, _new_size);
     // on failure, origin buffer ptr remains valid
     if (new_buffer == NULL) {
         ESP_LOGE(TAG, "%s: realloc to %u B failed", __func__, _new_size);
@@ -302,7 +303,7 @@ esp_err_t WLmon_Flash::write_wl_status_json(char *s, size_t n)
     retval = snprintf(s, n, "}\n");
     SNPRINTF_RETVAL_CHECK(retval, s, n);
 
-    ESP_LOGI(TAG, "%s: written JSON of length %d (0x%x)", __func__, max_len-n, max_len-n);
+    ESP_LOGI(TAG, "%s: written JSON of length %d (0x%x)", __func__, max_len - n, max_len - n);
 
     return ESP_OK;
 }

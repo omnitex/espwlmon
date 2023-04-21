@@ -67,7 +67,7 @@ esp_err_t WL_Advanced::config(wl_config_t *cfg, Flash_Access *flash_drv)
     this->addr_erase_counts2 = this->addr_state1 - this->erase_count_records_size;
 
     ESP_LOGD(TAG, "%s: new flash_size=0x%x, addr_erase_counts1=0x%x, addr_erase_counts2=0x%x",
-            __func__, this->flash_size, this->addr_erase_counts1, this->addr_erase_counts2);
+             __func__, this->flash_size, this->addr_erase_counts1, this->addr_erase_counts2);
 
     this->configured = true;
     return ESP_OK;
@@ -87,8 +87,9 @@ esp_err_t WL_Advanced::init()
     // calculate bits needed for sector addressing and in turn for Feistel network
     // feistel_bit_width = log2(sector_count)
     uint32_t sector_count = this->flash_size / this->cfg.sector_size;
-    for (feistel_bit_width = 0; sector_count; feistel_bit_width++)
+    for (feistel_bit_width = 0; sector_count; feistel_bit_width++) {
         sector_count >>= 1;
+    }
 
     /*
     * split bit width to | msb | lsb |
@@ -115,13 +116,13 @@ esp_err_t WL_Advanced::init()
 
     uint8_t *keys = (uint8_t *)&state_main->feistel_keys;
     ESP_LOGD(TAG, "%s: max_count=%i, move_count=0x%x, cycle_count=0x%x, Feistel keys=(%u,%u,%u)",
-            __func__,
-            state_main->max_count,
-            state_main->move_count,
-            state_main->cycle_count,
-            keys[0],
-            keys[1],
-            keys[2]);
+             __func__,
+             state_main->max_count,
+             state_main->move_count,
+             state_main->cycle_count,
+             keys[0],
+             keys[1],
+             keys[2]);
 
     if ((crc1 == state_main->crc) && (crc2 == state_copy->crc)) {
         // states are individually valid
@@ -338,16 +339,19 @@ bool WL_Advanced::OkBuffSet(int pos)
 {
     wl_sector_erase_record_t *record_buff = (wl_sector_erase_record_t *)this->temp_buff;
 
-    if (record_buff->device_id != this->state.device_id)
+    if (record_buff->device_id != this->state.device_id) {
         return false;
+    }
 
-    if (record_buff->pos != pos)
+    if (record_buff->pos != pos) {
         return false;
+    }
 
     // record_buff->sector is the information gained from record, so it's not to be checked
 
-    if (record_buff->crc != crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)record_buff, offsetof(wl_sector_erase_record_t, crc)))
+    if (record_buff->crc != crc32::crc32_le(WL_CFG_CRC_CONST, (uint8_t *)record_buff, offsetof(wl_sector_erase_record_t, crc))) {
         return false;
+    }
 
     return true;
 }
@@ -439,6 +443,13 @@ esp_err_t WL_Advanced::writeEraseCounts(size_t erase_counts_addr)
  *
  * Given that before calling this method the buffer contained erase counts as recovered by readEraseCounts(),
  * the buffer now contains the most up-to-date info about all-time per sector erase counts, ready for writeEraseCounts()
+ *
+ * As a pos update record is made only every updaterate erases, one occurrence of given sector in a record approximates
+ * to updaterate erases of that sector. And by incrementing the erase count in buffer only once for each record,
+ * we keep the erase count 'updaterate times' smaller. This allows for a smaller numeric type to be used, as we need to
+ * save PER SECTOR erase counts, where every byte counts.
+ *
+ * This results in having to multiply the value in buffer by updaterate to get the real approximate of erase count for that sector.
  */
 esp_err_t WL_Advanced::updateEraseCounts()
 {
@@ -526,9 +537,9 @@ esp_err_t WL_Advanced::readEraseCounts()
         }
 
         ESP_LOGV(TAG, "%s: read erase counts: | %u => %u | %u => %u | %u => %u |", __func__,
-            erase_count_buff->pairs[0].sector, erase_count_buff->pairs[0].erase_count,
-            erase_count_buff->pairs[1].sector, erase_count_buff->pairs[1].erase_count,
-            erase_count_buff->pairs[2].sector, erase_count_buff->pairs[2].erase_count);
+                 erase_count_buff->pairs[0].sector, erase_count_buff->pairs[0].erase_count,
+                 erase_count_buff->pairs[1].sector, erase_count_buff->pairs[1].erase_count,
+                 erase_count_buff->pairs[2].sector, erase_count_buff->pairs[2].erase_count);
     }
 
     ESP_LOGI(TAG, "%s: loaded erase counts to buffer", __func__);
@@ -673,7 +684,7 @@ esp_err_t WL_Advanced::updateWL(size_t sector)
 uint32_t WL_Advanced::feistelFunction(uint32_t msb, uint32_t key)
 {
     ESP_LOGV(TAG, "%s: msb=0x%x, key=0x%x, xor=0x%x, return=0x%x",
-            __func__, msb, key, (msb^key), ((msb^key)*(msb^key)));
+             __func__, msb, key, (msb ^ key), ((msb ^ key) * (msb ^ key)));
     return (msb ^ key) * (msb ^ key);
 }
 
@@ -775,7 +786,7 @@ size_t WL_Advanced::calcAddr(size_t addr)
         result += this->cfg.page_size;
     }
     ESP_LOGV(TAG, "%s - addr= 0x%08x, intermediate_addr=0x%08x -> result= 0x%08x, dummy_addr= 0x%08x",
-            __func__, (uint32_t) addr, (uint32_t)intermediate_addr, (uint32_t) result, (uint32_t)dummy_addr);
+             __func__, (uint32_t) addr, (uint32_t)intermediate_addr, (uint32_t) result, (uint32_t)dummy_addr);
     return result;
 }
 
