@@ -1,5 +1,4 @@
-#ifndef _WL_ADVANCED_H_
-#define _WL_ADVANCED_H_
+#pragma once
 
 #include "WL_Flash.h"
 
@@ -47,7 +46,6 @@ protected:
 
 };
 
-// TODO the align directive necessary?
 typedef struct WL_Advanced_State_s {
     uint32_t pos;           /*!< current dummy block position*/
     uint32_t max_pos;       /*!< maximum amount of positions*/
@@ -62,7 +60,6 @@ typedef struct WL_Advanced_State_s {
     uint32_t reserved[5];   /*!< Reserved space for future use*/
     uint32_t crc;           /*!< CRC of structure*/
 } wl_advanced_state_t;
-
 
 typedef struct WL_Sector_Erase_Record_s {
     uint32_t device_id;
@@ -81,4 +78,3 @@ typedef struct WL_Erase_Count_s {
     uint32_t crc;
 } wl_erase_count_t;
 
-#endif // _WL_ADVANCED_H_

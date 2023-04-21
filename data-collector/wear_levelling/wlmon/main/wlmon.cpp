@@ -84,8 +84,7 @@ esp_err_t get_wl_partition(const esp_partition_t **partition)
     esp_partition_iterator_t iterator = esp_partition_find(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, NULL);
 
     // iterate through all data partitions
-    while (iterator != NULL)
-    {
+    while (iterator != NULL) {
         candidate = esp_partition_get(iterator);
 
         if (candidate != NULL) {
@@ -188,11 +187,6 @@ int write_error_json(char *s, size_t n, esp_err_t errcode)
 {
     int retval = snprintf(s, n, "{\"error\":\"%s\"}\n", esp_err_to_name(errcode));
 
-    // TODO add verbose message here? simple error name from above could be interpreted at FE
-    // but the semantics could change and it would need to be updated across BE/FE
-    // or print verbose message here and the potential changes that would need to be addressed stay within data-collector
-
-    // quick and dirty solution? no verbose error reporting, if something fails, you just do idf.py monitor instead of viewing it through front end
     return retval;
 }
 
@@ -210,13 +204,15 @@ esp_err_t wlmon_get_status(char **buffer)
     WL_RESULT_CHECK(result);
 
     result = get_wl_partition(&partition);
-    if (result != ESP_OK)
+    if (result != ESP_OK) {
         write_error_json(*buffer, json_buffer_size, result);
+    }
     WL_RESULT_CHECK(result);
 
     result = wl_attach(partition, &wl_instance);
-    if (result != ESP_OK)
+    if (result != ESP_OK) {
         write_error_json(*buffer, json_buffer_size, result);
+    }
     WL_RESULT_CHECK(result);
 
     if (wl_instance->get_wl_mode() == WL_MODE_ADVANCED) {
@@ -224,8 +220,9 @@ esp_err_t wlmon_get_status(char **buffer)
 
         result = wl_instance->resize_json_buffer(buffer, &new_json_buffer_size);
         // on resize failure, buffer remains valid => can write error
-        if (result != ESP_OK)
+        if (result != ESP_OK) {
             write_error_json(*buffer, json_buffer_size, result);
+        }
         WL_RESULT_CHECK(result);
 
         json_buffer_size = new_json_buffer_size;
@@ -233,8 +230,9 @@ esp_err_t wlmon_get_status(char **buffer)
     }
 
     result = wl_instance->write_wl_status_json(*buffer, json_buffer_size);
-    if (result != ESP_OK)
+    if (result != ESP_OK) {
         write_error_json(*buffer, json_buffer_size, result);
+    }
     WL_RESULT_CHECK(result);
 
     result = ESP_OK;
