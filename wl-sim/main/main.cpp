@@ -1,124 +1,148 @@
 #include <cstdlib>
 #include <time.h>
+#include <cstring>
 
 #include "esp_log.h"
+#include "wl_sim_random.h"
 #include "wl_sim.h"
-#include "random.h"
-#include "WL_Flash.h"
+#include "WLsim_Flash.h"
 
 static const char *TAG = "wl-sim";
 
-extern size_t restarted;
+extern uint32_t restarted;
 extern size_t access_count;
-extern size_t move_count;
-extern uint32_t feistel_cycle_walks;
 
-// {constant,uniform,zipf,linear}
-#define ADDRESS_FUNCTION zipf
-// {0,1} if addr supplied to ADDRESS_FUNCTION should be zero
-#define ZERO_ADDR 0
-// {0,1} enable feistel network address randomization
-#define FEISTEL 1
-// number of iterations of main erase loop. BEWARE OF VERBOSE LOGGING
-#define ITERATIONS 25000000
-// {0,1} enable per sector verbose erase count logs
-#define VERBOSE_ERASE_COUNTS 0
-// {block_constant, block_zipf}
-#define BLOCK_SIZE_FUNCTION block_constant
-// block size of consecutive sectors erased per iteration
-#define ERASE_BLOCK 20
-// 0x1000 == 4K == full sector
-#define ERASE_SIZE (0x1000)
+typedef size_t (*address_function_t)(size_t);
+typedef size_t (*block_size_function_t)(size_t);
 
-// restart after each erase range, in per mille
-// 0 disables random restarting
-#define RESTART_PROBABILITY 0
+// forward declaration
+int feistel_test();
 
-int main()
+int main(int argc, char **argv)
 {
     srand(time(0));
     esp_err_t result;
 
-    ESP_LOGI(TAG, "===== SETUP =====");
-    ESP_LOGI(TAG, "sector_size=0x%x (%u)", SECTOR_SIZE, SECTOR_SIZE);
-    ESP_LOGI(TAG, "sector_count=0x%x (%u)", SECTOR_COUNT, SECTOR_COUNT);
+    // if single argument 'test', run the mapping correctness test
+    if (argc == 2 && strcmp(argv[1], "test") == 0) {
+        feistel_test();
+        return 0;
+    }
 
-#if FEISTEL == 1
-    init_feistel();
-#endif
+    // otherwise require all args for a simulation run
+    // e.g. wl-sim.elf f z z 10 0
+    // for Feistel enabled, zipf address access and zipf block size with maximum of 10 and 0 per mille chance for restart
+    if (argc != 6) {
+        printf("Need simulation params as arguments:\n\
+\tENABLE_FEISTEL: f for Feistel, b for base mapping alg\n\
+\tADDRESS_FUNC: z for zipf, c for const\n\
+\tBLOCKS_SIZE_FUNC: z for zipf, c for const\n\
+\tBLOCK_SIZE: N for max erase block size\n\
+\tRESTART_PROB: P for restart probability after every erase [per mille]\n");
+        return ESP_FAIL;
+    }
+
+    // quick and dirty arg parsing
+    bool enable_feistel = argv[1][0] == 'f' ? true : false;
+    address_function_t addr_func = argv[2][0] == 'z' ? &zipf : &constant;
+    block_size_function_t block_func = argv[3][0] == 'z' ? &block_zipf : &block_constant;
+    size_t erase_block_size = strtoul(argv[4], NULL, 10);
+    int restart_prob = strtoul(argv[5], NULL, 10);
+
+    //ESP_LOGI(TAG, "feistel: %u, addr_func: %p, erase_block_size: %u", enable_feistel, addr_func, erase_block_size);
+
+    // if Feistel enabled from args, init keys and variables
+    if (enable_feistel) {
+        init_feistel(false);
+    }
+
+    // runs until any sector reaches erase lifetime, see erase_sector()
+    for (;;) {
+        result = erase_range(addr_func(FLASH_SIZE), ERASE_SIZE * block_func(erase_block_size));
+
+        // non OK result returned only on sector reaching lifetime meaning we should end simulation run
+        if (result != ESP_OK) {
+            break;
+        }
+
+        // otherwise continue
+
+        // if nonzero restart probability from arguments
+        if (restart_prob != 0) {
+            // generate number P in per mille to compare with given restart prob
+            int P = rand() % 1000;
+            if (P < restart_prob) {
+                // and simulate a restart, loosing current value of access_count
+                access_count = 0;
+                restarted++;
+            }
+        }
+    }
+
+    // after simulation run complete, print output statistics
+    print_output();
+
+    return 0;
+}
 
 // test that feistel indeed maps 1:1, that no two sectors map to the same one
-#if 0
-    init_feistel();
+int feistel_test()
+{
+    // generate keys etc.
+    init_feistel(true);
+    ESP_LOGI(TAG, "Feistel initialized");
 
+    // per sector tracker of how many times given sector was the output of Feistel network
     uint8_t occurences[SECTOR_COUNT] = {0};
 
-    ESP_LOGI(TAG, "FLASH_SIZE=0x%x", FLASH_SIZE);
-
+    uint32_t nonzeros = 0;
     size_t addr, sector_addr;
 
-    auto nonzeros = 0;
-    for (auto i = 0; i < SECTOR_COUNT; i++) {
-        addr = feistel_network(i*SECTOR_SIZE);
+    // go through all sectors
+    for (uint32_t i = 0; i < SECTOR_COUNT; i++) {
+        // get the randomized mapping for sector given by i
+        addr = feistel_network(i * SECTOR_SIZE);
 
-        //addr = (FLASH_SIZE - move_count * PAGE_SIZE + addr) % FLASH_SIZE;
-        sector_addr = addr/SECTOR_SIZE;
+        // sector_addr ~ sector index (0, 1, 2 ~ SECTOR_COUNT-1)
+        sector_addr = addr / SECTOR_SIZE;
 
-        //ESP_LOGI(TAG, "feistel(0x%x)=>0x%x", i, sector_addr);
+        // if Feistel mapped given sector outside of possible indices, report error
         if (sector_addr >= SECTOR_COUNT) {
             ESP_LOGE(TAG, "sector_addr=%u", sector_addr);
         }
 
+        // now use the fact that sector_addr ~ index
+        // and mark that given sector was the output of Feistel
         occurences[sector_addr]++;
         nonzeros++;
     }
+    // sector_count should equal nonzeros
     ESP_LOGI(TAG, "after feistel: sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
     nonzeros = 0;
 
-    for (auto i = 0; i < SECTOR_COUNT; i++) {
+    // now do second go through all sector and this time check that from previous loop
+    // each sector was the output of Feistel exactly once => 1-to-1 mapping
+    for (uint32_t i = 0; i < SECTOR_COUNT; i++) {
+        // sector_addr ~ i
         if (occurences[i] != 0) {
             nonzeros++;
+            // if given sector occurred multiple times, that is an error as mapping should be 1:1
             if (occurences[i] > 1) {
                 ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             } else {
+                // this is the correct state, nonzero occurrence but not greater than 1
                 //ESP_LOGI(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             }
+            // any other state is also erroneous
         } else if (occurences[i] == 0) {
             ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
         } else {
             ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
         }
     }
+    // once again sector_count should equal nonzeros
     ESP_LOGI(TAG, "after occurences: sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
-    ESP_LOGI(TAG, "cycle_walks=%u", feistel_cycle_walks);
-
-    return 0;
-#endif
-
-    ESP_LOGI(TAG, "iterations: %u", ITERATIONS);
-    ESP_LOGI(TAG, "erase block: %u", ERASE_BLOCK);
-
-    for (size_t i = 0; i < ITERATIONS; i++) {
-
-        result = erase_range(ADDRESS_FUNCTION(FLASH_SIZE * !ZERO_ADDR), ERASE_SIZE * BLOCK_SIZE_FUNCTION(ERASE_BLOCK));
-
-        if (result != ESP_OK)
-            break;
-
-#if RESTART_PROBABILITY != 0
-        // simulated device hard restart, current access count is lost without a pos update record
-        int restart_prob = rand() % 1000;
-        if (restart_prob < RESTART_PROBABILITY) {
-            access_count = 0;
-            restarted++;
-        }
-#endif
-
-    }
-
-    print_erase_counts(VERBOSE_ERASE_COUNTS);
     print_vars();
-    print_reconstructed();
 
     return 0;
 }

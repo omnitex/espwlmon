@@ -1,5 +1,4 @@
-#ifndef __RANDOM_H__
-#define __RANDOM_H__
+#pragma once
 
 #include "wl_sim.h"
 
@@ -11,18 +10,12 @@ size_t constant(size_t max_addr);
 // self explanatory
 size_t uniform(size_t max_addr);
 
-/* start heavy
+/* start heavy distribution for <0, max_addr>
  *  --
  *    \
  *     \~~__
  */
 size_t zipf(size_t max_addr);
-
-/* piece-wise linear distribution
- *     /~--~\
- *  _~/      \~_
- */
-size_t linear(size_t max_addr);
 
 /*
  * Just returns the block given as argument
@@ -33,6 +26,3 @@ size_t block_constant(size_t erase_block);
  * Zipf distribution for <1, erase_block>
  */
 size_t block_zipf(size_t erase_block);
-
-#endif
-
