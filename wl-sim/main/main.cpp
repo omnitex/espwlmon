@@ -30,11 +30,11 @@ int main(int argc, char **argv)
     }
 
     // otherwise require all args for a simulation run
-    // e.g. wl-sim.elf f z z 10 0
+    // e.g. wl-sim f z z 10 0
     // for Feistel enabled, zipf address access and zipf block size with maximum of 10 and 0 per mille chance for restart
     if (argc != 6) {
         printf("Need simulation params as arguments:\n\
-\tENABLE_FEISTEL: f for Feistel, b for base mapping alg\n\
+\tMAPPING_ALG: f for Feistel, b for base mapping alg\n\
 \tADDRESS_FUNC: z for zipf, c for const\n\
 \tBLOCKS_SIZE_FUNC: z for zipf, c for const\n\
 \tBLOCK_SIZE: N for max erase block size\n\
@@ -42,14 +42,57 @@ int main(int argc, char **argv)
         return ESP_FAIL;
     }
 
-    // quick and dirty arg parsing
-    bool enable_feistel = argv[1][0] == 'f' ? true : false;
-    address_function_t addr_func = argv[2][0] == 'z' ? &zipf : &constant;
-    block_size_function_t block_func = argv[3][0] == 'z' ? &block_zipf : &block_constant;
-    size_t erase_block_size = strtoul(argv[4], NULL, 10);
-    int restart_prob = strtoul(argv[5], NULL, 10);
+    // argument parsing
 
-    //ESP_LOGI(TAG, "feistel: %u, addr_func: %p, erase_block_size: %u", enable_feistel, addr_func, erase_block_size);
+    bool enable_feistel = false;
+    if (strcmp(argv[1], "f") == 0) {
+        enable_feistel = true;
+    } else if (strcmp(argv[1], "b") == 0) {
+        // enable_feistel already false
+    } else {
+        fprintf(stderr, "First argument '%s' invalid, defaulting to base mapping...\n", argv[1]);
+        // enable_feistel already false
+    }
+
+    address_function_t addr_func = &constant;
+    if (strcmp(argv[2], "z") == 0) {
+        addr_func = &zipf;
+    } else if (strcmp(argv[2], "c") == 0) {
+        // addr_func already constant
+    } else {
+        fprintf(stderr, "Second argument '%s' invalid, defaulting to constant address...\n", argv[2]);
+        // addr_func already constant
+    }
+
+    block_size_function_t block_func = &block_constant;
+    if (strcmp(argv[3], "z") == 0) {
+        block_func = &block_zipf;
+    } else if (strcmp(argv[3], "c") == 0) {
+        // block_func already constant
+    } else {
+        fprintf(stderr, "Third argument '%s' invalid, defaulting to constant erase block size...\n", argv[3]);
+        // block_func already constant
+    }
+
+    // last two arguments are numbers
+    char *end = NULL;
+    int erase_block_size = strtol(argv[4], &end, 10);
+    if (*end != '\0') {
+        fprintf(stderr, "Invalid erase block size '%s'!\n", argv[4]);
+        return ESP_FAIL;
+    } else if (erase_block_size <= 0) {
+        fprintf(stderr, "Invalid erase block size %i, must be > 0\n", erase_block_size);
+        return ESP_FAIL;
+    }
+
+    int restart_prob = strtol(argv[5], &end, 10);
+    if (*end != '\0') {
+        fprintf(stderr, "Invalid restart probability %s'!\n", argv[5]);
+        return ESP_FAIL;
+    } else if (restart_prob < 0) {
+        fprintf(stderr, "Invalid restart probability %i, must be > 0 or 0 to turn off random restarting\n", restart_prob);
+        return ESP_FAIL;
+    }
 
     // if Feistel enabled from args, init keys and variables
     if (enable_feistel) {
@@ -120,7 +163,7 @@ int feistel_test()
     ESP_LOGI(TAG, "after feistel: sector_count=%u, nonzeros=%u", SECTOR_COUNT, nonzeros);
     nonzeros = 0;
 
-    // now do second go through all sector and this time check that from previous loop
+    // now do second go through all sectors and this time check that from previous loop
     // each sector was the output of Feistel exactly once => 1-to-1 mapping
     for (uint32_t i = 0; i < SECTOR_COUNT; i++) {
         // sector_addr ~ i
@@ -131,9 +174,8 @@ int feistel_test()
                 ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             } else {
                 // this is the correct state, nonzero occurrence but not greater than 1
-                //ESP_LOGI(TAG, "sector 0x%x occured %u times", i, occurences[i]);
             }
-            // any other state is also erroneous
+        // any other state is also erroneous
         } else if (occurences[i] == 0) {
             ESP_LOGE(TAG, "sector 0x%x occured %u times", i, occurences[i]);
         } else {

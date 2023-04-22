@@ -16,16 +16,16 @@ static const char *TAG = "WLsim_Flash";
 
 // exported for zeroing in main on simulated restart
 size_t access_count = 0;
+// exported to main for incrementing on simulated restart
+uint32_t restarted = 0;
 
 // main mapping counters
 static size_t pos = 0;
 static size_t move_count = 0;
 static uint32_t cycle_count = 0;
 
-uint32_t erase_count[SECTOR_COUNT + 1] = {0};
-
-// exported to main for incrementing
-uint32_t restarted = 0;
+// array for keeping per sector erase counts
+static uint32_t erase_counts[SECTOR_COUNT + 1] = {0};
 
 // 3 keys for 3 stage unbalanced Feistel network
 static uint8_t keys[3] = {0};
@@ -66,7 +66,7 @@ void init_feistel(bool verbose)
         ESP_LOGI(TAG, "%s: key_len=%u", __func__, key_len);
     }
 
-    for (auto i = 0; i < 3; i++) {
+    for (uint8_t i = 0; i < 3; i++) {
         keys[i] = rand() % UINT8_MAX;
     }
 
@@ -99,7 +99,7 @@ round:
 
     size_t msb, lsb, _msb, _lsb, randomized_addr;
 
-    for (auto i = 0; i < 3; i++) {
+    for (uint8_t i = 0; i < 3; i++) {
         msb = sector_addr >> LSB;
         lsb = sector_addr & LSB_mask;
 
@@ -177,12 +177,12 @@ esp_err_t erase_sector(size_t sector)
 
     ESP_LOGV(TAG, "%s - virt_addr= 0x%08x, phy_sector= 0x%08x", __func__, (uint32_t) virt_addr, (uint32_t) phy_sector);
 
-    erase_count[phy_sector]++;
+    erase_counts[phy_sector]++;
 
     // reached maximum lifetime of a sector
     // stop erasing and propagate to calculating normalized endurance (NE)
-    if (erase_count[phy_sector] >= SECTOR_ERASE_ENDURANCE) {
-        //ESP_LOGW(TAG, "%s: sector %u reached %u", __func__, phy_sector, erase_count[phy_sector]);
+    if (erase_counts[phy_sector] >= SECTOR_ERASE_ENDURANCE) {
+        //ESP_LOGW(TAG, "%s: sector %u reached %u", __func__, phy_sector, erase_counts[phy_sector]);
         return ESP_FAIL;
     }
 
@@ -230,7 +230,7 @@ void print_output()
     uint32_t min = UINT32_MAX, max = 0, nonzeros = 0;
 
     for (size_t i = 0; i <= SECTOR_COUNT; i++) {
-        uint32_t count = erase_count[i];
+        uint32_t count = erase_counts[i];
         if (count != 0) {
             sum += count;
             nonzeros++;
@@ -262,9 +262,9 @@ void print_reconstructed()
     size_t resolution = (MAX_POS - 1) * UPDATERATE;
     ESP_LOGD(TAG, "resolution: 0x%lx (%ld)", resolution, resolution);
 
-    auto erase_from_pos = pos * UPDATERATE;
-    auto erase_from_mc = move_count * MAX_POS * UPDATERATE + erase_from_pos;
-    auto erase_from_cc = cycle_count * MAX_POS * (MAX_POS - 1) * UPDATERATE + erase_from_mc;
+    uint32_t erase_from_pos = pos * UPDATERATE;
+    uint32_t erase_from_mc = move_count * MAX_POS * UPDATERATE + erase_from_pos;
+    uint32_t erase_from_cc = cycle_count * MAX_POS * (MAX_POS - 1) * UPDATERATE + erase_from_mc;
 
     ESP_LOGD(TAG, "erase count from mc&pos: %ld", erase_from_mc);
     ESP_LOGD(TAG, "erase count including cycle_count: %ld", erase_from_cc);
