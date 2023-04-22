@@ -1,30 +1,34 @@
-#! /usr/bin/env python
+#! /usr/bin/env python3
 
-__version__ = "0.2"
+__version__ = "0.4"
 
 import argparse
-import os
 import sys
 import json
-from math import ceil
+import math
 import serial
 
-import esptool
-from esptool.util import (
-    FatalError
-)
+import PySimpleGUI as sg
+import matplotlib
+import matplotlib.pyplot as plt
 
-#TODO randomize filenames?
-PARTITION_TABLE_OLD_BIN = "partition_table_old.bin"
-PARTITION_TABLE_NEW_BIN = "partition_table_new.bin"
-#TODO part table does not have to be at 0x8000
-PARTITION_TABLE_ADDRESS = "0x8000"
-PARTITION_TABLE_SIZE = "0xC00"
+import plotly.express as px
 
-DATA_COLLECTOR_BIN = "data-collector/build/data-collector.bin"
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import numpy as np
 
+# button text serving also as button element key and event name
+TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY = 'Toggle erase counts'
+EXPORT_PLOTLY_HTML_BUTTON_KEY = 'Export Plotly'
+
+# list for keeping keys of input elements acting as selectable text elements
+selectable_texts_keys = list()
 
 def monitor(port):
+    """
+    Open serial connection on given port and obtain valid JSON from wlmon or report an error in receiving/parsing.
+    On successfully received JSON, launch GUI.
+    """
     print(f"Starting monitor on port {port}")
 
     try:
@@ -42,10 +46,12 @@ def monitor(port):
             if json_dict is None:
                 # first JSON load
                 json_dict = json.loads(json_line)
+                print("JSON received, validating...")
             else:
                 # JSON already loaded, check next load produces same JSON
                 if (json_dict != json.loads(json_line)):
                     # they differ, save the newly loaded
+                    print("Warning: received JSON could not be confirmed, try again...")
                     json_dict = json.loads(json_line)
                 else:
                     # they are the same, break out of while
@@ -53,147 +59,428 @@ def monitor(port):
 
         except json.JSONDecodeError as json_decode_error:
             print(f"Error parsing received JSON: {json_decode_error.msg}")
-            context_characters = 15
+            context_characters = 20
+            # given position of error, calculate left bound; if |0<->error| <= context_chars then start at zero, as we have less than or at max context_chars to the left
+            # or if |0<->error| > context_chars then we have enough context to show; |0 ~~~ <-context_chars->error|
+            context_start = 0 if json_decode_error.pos <= context_characters else (json_decode_error.pos - context_characters)
+            # similar logic for right bound, if |error<->json_line_end} <= context_chars then we have at max context_chars to the right, set bound to end of string
+            # or if |error<->json_line_end| > context_chars, we only show context chars - |error<-context_chars->| to the right
+            context_end = (len(json_line) - 1) if (len(json_line) - json_decode_error.pos) <= context_characters else (json_decode_error.pos + context_characters)
             # print the context of error with characters around and arrow on next line pointing to the exact position
-            print(f"{json_line[json_decode_error.pos-context_characters:json_decode_error.pos+context_characters]}")
-            print(' ' * context_characters, '^', ' ' * context_characters, sep='')
+            print(f"{json_line[context_start:context_end]}")
+
+            context_characters = (context_end - context_start) if ((context_end - context_start) < context_characters) else context_characters
+            print('-' * context_characters, '^', ' ' * context_characters, sep='')
             serial_port.close()
+            print('\nMake sure wlmon is flashed to your device and try running espwlmon.py again')
             return
 
     print("Received JSON confirmed, closing serial port")
     serial_port.close()
 
-    print(json.dumps(json_dict, indent=4))
+    gui(json_dict)
 
-def flash():
-    if not os.path.isfile(DATA_COLLECTOR_BIN):
-        print("Please build data collector first: espwlmon.py build --chip <target-chip>")
-        sys.exit(1)
+def gui(json_dict):
+    """
+    Given the parsed JSON dictionary, create erase count heatmap and PySimpleGUI layout and launch the GUI window.
+    """
+    sg.theme('Gray Gray Gray')
+    sg.set_options(font=('Roboto', 11))
 
-    # skip progname and operation
-    argv = sys.argv[2:]
+    wl_mode = 'undefined'
 
-    print("Reading existing partition table")
-    args_read_partition_table = argv + ["read_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_SIZE, PARTITION_TABLE_OLD_BIN]
-    try:
-        esptool.main(args_read_partition_table)
-    except FatalError as fatal_error:
-        print(f"{fatal_error}")
-        cleanup(2)
+    if 'wl_mode' in json_dict:
+        wl_mode = json_dict['wl_mode']
+        if wl_mode == 'advanced':
+            layout, heatmap, fig, ax = create_advanced_layout(json_dict)
+        else:
+            layout = create_base_layout(json_dict)
+    elif 'error' in json_dict:
+        layout = create_error_layout(json_dict)
+    else:
+        layout = create_error_layout(json_dict, 'Unknown JSON received')
 
-    with open(PARTITION_TABLE_OLD_BIN, "rb") as partition_table_file:
-        table, _ = gen_esp32part.PartitionTable.from_file(partition_table_file)
-    
-    if table.find_by_name("test") is not None:
-        print("Test app partition already exists, aborting...")
-        cleanup(2)
+    # create window
+    window = sg.Window(f'espwlmon v{__version__}', layout, finalize=True, margins=(10,10))
 
-    # we will add test partition right at the end of existing partitions
-    test_partition_offset = table.flash_size()
+    if wl_mode == 'advanced':
+        # draw the heatmap
+        canvas = draw_figure(window['-CANVAS-'].TKCanvas, fig)
 
-    # determine test partition size, make it a multiple of 4K blocks
-    data_collector_size = os.stat(DATA_COLLECTOR_BIN).st_size
-    number_of_64k_blocks = ceil(data_collector_size/0x1000)
-    test_partition_len = number_of_64k_blocks * 0x1000
+    # set zero border width for all inputs that are read only to mock selectable texts
+    for key in selectable_texts_keys:
+        window[key].Widget.config(borderwidth=0)
 
-    # construct a new CSV line that will be appended to existing partition table
-    test_partition_csv = f"test,app,test,{test_partition_offset},{test_partition_len}"
+    # main event loop for the window
+    while True:
+        event, values = window.read()
+        if event in (sg.WIN_CLOSED, 'Exit'):
+            break
+        if event == TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY:
+            for annotation in ax.texts:
+                annotation.set_visible(not annotation.get_visible())
+            canvas.draw()
+        if event == EXPORT_PLOTLY_HTML_BUTTON_KEY:
+            # disable button and change text to reflect heatmap is being generated
+            window[EXPORT_PLOTLY_HTML_BUTTON_KEY].update(disabled=True, text='Generating heatmap...')
+            window.refresh()
 
-    # append new line specifying test partition
-    table.append(gen_esp32part.PartitionDefinition.from_csv(test_partition_csv, len(table)))
+            px_heatmap = px.imshow(heatmap, text_auto=True)
+            px_heatmap.update_layout(xaxis=dict(tickmode='linear'), yaxis=dict(tickmode='linear'))
 
-    #TODO check table.flash_size() after adding test is still <= overall flash size (get that from somewhere)
+            rows, cols = heatmap.shape
+            hover_labels = [[f'sector_num={y*cols + x}, erase_count={heatmap[y, x]}' for x in range(cols)] for y in range(rows)]
+            px_heatmap.update_traces(hovertemplate='%{customdata}<extra></extra>', customdata=hover_labels, text=heatmap)
 
-    print("Verifying altered partition table before writing it")
-    try:
-        table.verify()
-    except InputError as input_error:
-        print(f"Failed adding test app partition! {input_error}")
-        cleanup(2)
+            # once heatmap is ready to be saved, revert button to original state
+            window[EXPORT_PLOTLY_HTML_BUTTON_KEY].update(disabled=False, text=EXPORT_PLOTLY_HTML_BUTTON_KEY)
+            window.refresh()
 
-    with open(PARTITION_TABLE_NEW_BIN, "wb") as f:
-        f.write(table.to_binary())
-    
-    print("Flashing new partition table")
-    args_write_partition_table = argv + ["write_flash", PARTITION_TABLE_ADDRESS, PARTITION_TABLE_NEW_BIN]
-    try:
-        esptool.main(args_write_partition_table)
-    except FatalError as fatal_error:
-        print(f"{fatal_error}")
-        cleanup(2)
+            filename = sg.popup_get_file('Save as', save_as=True, file_types=[('HTML Files', '*.html')], default_path='./heatmap.html')
+            if filename is not None:
+                px_heatmap.write_html(filename)
+                popup_toast(window, 'Plotly heatmap exported successfully')
 
-    print("Flashing data collector to test partition")
-    args_flash_data_collector = argv + ["write_flash", f"{test_partition_offset}", DATA_COLLECTOR_BIN]
-    try:
-        esptool.main(args_flash_data_collector)
-    except FatalError as fatal_error:
-        print(f"{fatal_error}")
-        cleanup(2)
+    window.close()
 
-    print("\nSuccessfully flashed data collector")
-    cleanup(0)
+# Helper function for creating a Matplotlib heatmap
+# source https://matplotlib.org/stable/gallery/images_contours_and_fields/image_annotated_heatmap.html
+def create_heatmap(data, row_labels, col_labels, ax=None,
+            cbar_kw=None, cbarlabel="", **kwargs):
+    """
+    Create a heatmap from a numpy array and two lists of labels.
 
-def idf_setup():
-    # Source: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/partition-tables.html
-    try:
-        idf_path = os.environ["IDF_PATH"]
-    except KeyError as key_error:
-        print(f"Please set up ESP-IDF environmental variables (with ESP-IDF provided export script) before using espwlmon.")
-        sys.exit(2)
-    parttool_dir = os.path.join(idf_path, "components", "partition_table")
-    sys.path.append(parttool_dir)
-    try:
-        import gen_esp32part # type: ignore
-        from gen_esp32part import ( # type: ignore
-            InputError
-        )
-    except ModuleNotFoundError:
-        print("Cannot find gen_esp32part module", file=sys.stderr)
-        sys.exit(2)
+    Parameters
+    ----------
+    data
+        A 2D numpy array of shape (M, N).
+    row_labels
+        A list or array of length M with the labels for the rows.
+    col_labels
+        A list or array of length N with the labels for the columns.
+    ax
+        A `matplotlib.axes.Axes` instance to which the heatmap is plotted.  If
+        not provided, use current axes or create a new one.  Optional.
+    cbar_kw
+        A dictionary with arguments to `matplotlib.Figure.colorbar`.  Optional.
+    cbarlabel
+        The label for the colorbar.  Optional.
+    **kwargs
+        All other arguments are forwarded to `imshow`.
+    """
 
-    idftool_dir = os.path.join(idf_path, "tools")
-    sys.path.append(idftool_dir)
-    #TODO what is this supposed to be?
-    try:
-        import idf # type: ignore
-    except ModuleNotFoundError:
-        print("Cannot find idf module", file=sys.stderr)
-        sys.exit(2)
+    if ax is None:
+        ax = plt.gca()
 
+    if cbar_kw is None:
+        cbar_kw = {}
+
+    # Plot the heatmap
+    im = ax.imshow(data, **kwargs)
+
+    # Create colorbar
+    cbar = ax.figure.colorbar(im, ax=ax, **cbar_kw)
+    cbar.ax.set_ylabel(cbarlabel, rotation=-90, va="bottom")
+
+    # Show all ticks and label them with the respective list entries.
+    ax.set_xticks(np.arange(data.shape[1]), labels=col_labels)
+    ax.set_yticks(np.arange(data.shape[0]), labels=row_labels)
+
+    # Let the horizontal axes labeling appear on top.
+    ax.tick_params(top=True, bottom=False,
+                   labeltop=True, labelbottom=False)
+
+    # Rotate the tick labels and set their alignment.
+    plt.setp(ax.get_xticklabels(), rotation=-30, ha="right",
+             rotation_mode="anchor")
+
+    # Turn spines off and create white grid.
+    ax.spines[:].set_visible(False)
+
+    ax.set_xticks(np.arange(data.shape[1]+1)-.5, minor=True)
+    ax.set_yticks(np.arange(data.shape[0]+1)-.5, minor=True)
+    ax.grid(which="minor", color="w", linestyle='-', linewidth=0)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    return im, cbar
+
+# Helper function for annotating a Matplotlib heatmap
+# source https://matplotlib.org/stable/gallery/images_contours_and_fields/image_annotated_heatmap.html
+def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
+                     textcolors=("black", "white"),
+                     threshold=None, **textkw):
+    """
+    A function to annotate a heatmap.
+
+    Parameters
+    ----------
+    im
+        The AxesImage to be labeled.
+    data
+        Data used to annotate.  If None, the image's data is used.  Optional.
+    valfmt
+        The format of the annotations inside the heatmap.  This should either
+        use the string format method, e.g. "$ {x:.2f}", or be a
+        `matplotlib.ticker.Formatter`.  Optional.
+    textcolors
+        A pair of colors.  The first is used for values below a threshold,
+        the second for those above.  Optional.
+    threshold
+        Value in data units according to which the colors from textcolors are
+        applied.  If None (the default) uses the middle of the colormap as
+        separation.  Optional.
+    **kwargs
+        All other arguments are forwarded to each call to `text` used to create
+        the text labels.
+    """
+
+    if not isinstance(data, (list, np.ndarray)):
+        data = im.get_array()
+
+    # Normalize the threshold to the images color range.
+    if threshold is not None:
+        threshold = im.norm(threshold)
+    else:
+        threshold = im.norm(data.max())/2.
+
+    # Set default alignment to center, but allow it to be
+    # overwritten by textkw.
+    kw = dict(horizontalalignment="center",
+              verticalalignment="center")
+    kw.update(textkw)
+
+    # Get the formatter in case a string is supplied
+    if isinstance(valfmt, str):
+        valfmt = matplotlib.ticker.StrMethodFormatter(valfmt)
+
+    # Loop over the data and create a `Text` for each "pixel".
+    # Change the text's color depending on the data.
+    texts = []
+    for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+            kw.update(color=textcolors[int(im.norm(data[i, j]) > threshold)])
+            text = im.axes.text(j, i, valfmt(data[i, j], None), **kw)
+            texts.append(text)
+
+    return texts
+
+####################################
+# Text/text element helper functions
+####################################
+
+def make_text_vertical(text):
+    vertical = ''
+    for l in text:
+        vertical += f'{l}\n'
+    return vertical
+
+def format_thousands(num, _):
+    if num >= 1000:
+        return '{:.0f}K'.format(num / 1000)
+    else:
+        return str(num)
+
+def selectable_text(text, text_color='black'):
+    # create unique key for the text from current length of list and the text itself, ensuring identical texts will have different keys
+    selectable_texts_keys.append(f'{len(selectable_texts_keys)}:{text}')
+    # return disabled input element with given text, appropriate size and indexable by created key
+    return [[sg.InputText(text, size=(len(text), 1), text_color=text_color, use_readonly_for_disable=True, disabled=True, key=selectable_texts_keys[-1])]]
+
+#######################################
+# Erase count heatmap related functions
+#######################################
+
+def calculate_heatmap_dimensions(sector_count):
+    # calculate heatmap side lengths for given sector_count
+    # e.g. 248 sector fit in a X=16, Y=16 square
+    # this introduces invalid positions in the heatmap, from sector count up to X*Y
+    X = 1
+    Y = sector_count
+    while X < Y:
+        X += 1
+        Y = math.ceil(sector_count / X)
+
+    return X, Y
+
+def create_erase_count_heatmap(sector_count):
+
+    cols, rows = calculate_heatmap_dimensions(sector_count)
+
+    # 2D heatmap to contain all integer sector counts, init with zeros
+    heatmap = np.zeros((rows, cols), dtype=int)
+    # write an invalid erase count of -1 to positions that are in the heatmap
+    # yet are not valid sectors
+    for i in range(sector_count, rows*cols):
+        heatmap[i // cols, i % cols] = -1
+
+    return heatmap
+
+def plot_erase_count_heatmap(erase_counts, sector_count, updaterate):
+    # create and initialize heatmap to fit given sector count
+    heatmap = create_erase_count_heatmap(sector_count)
+    cols, rows = calculate_heatmap_dimensions(sector_count)
+
+    # fill heatmap with values from erase_counts JSON
+    # index with sector num but in 2D
+    for sector_num_str, erase_count_str in erase_counts.items():
+        sector_num = int(sector_num_str)
+        erase_count = int(erase_count_str)
+
+        if heatmap[sector_num // cols, sector_num % cols] == -1:
+            print(f'will rewrite -1 at {sector_num} ({sector_num//cols}, {sector_num%cols}) with {updaterate*erase_count}')
+
+        # every erase count means updaterate erases, as that is the threshold for triggering writing a record to flash
+        heatmap[sector_num // cols, sector_num % cols] = updaterate * erase_count
+    # create matplotlib figure
+    fig, ax = plt.subplots()
+    # choose plasma color palette with extremes (set below using vmin)
+    palette = plt.cm.plasma.with_extremes(under='black')
+
+    # create lists of hex labels for ticks for both rows (Y) and cols (Y)
+    col_labels = [hex(x) for x in range(cols)]
+    row_labels = [hex(y*cols) for y in range(rows)]
+    # plot the heatmap, set vmin, vmax limits for extremes that will be colored as set above in with_extremes()
+    im, _ = create_heatmap(heatmap, row_labels, col_labels, ax=ax, cbarlabel='erase count', cmap=palette, vmin=0)
+
+    # annotate individual positions with erase counts formatted to display thousands as multiple of K
+    annotate_heatmap(im, valfmt=format_thousands, size=8, textcolors=('white', 'black'))
+    # improves spacing of stuff in fig a bit
+    fig.tight_layout()
+
+    return heatmap, fig, ax
+
+############################
+# Other GUI related functions
+############################
+
+def draw_figure(canvas, figure):
+    figure_canvas_agg = FigureCanvasTkAgg(figure, canvas)
+    figure_canvas_agg.draw()
+    figure_canvas_agg.get_tk_widget().pack(side='top', fill='both', expand=True, anchor='center')
+    return figure_canvas_agg
+
+def popup_toast(window, message, duration=2000, background_color='light gray'):
+    toast_layout = [[sg.Text(message, pad=(20,10), background_color=background_color)]]
+    toast_window = sg.Window('', toast_layout, keep_on_top=True, no_titlebar=True, alpha_channel=.8, finalize=True, background_color=background_color)
+    # one-shot centering of toast to the center of parent window, does not track movement after that
+    toast_window.move(window.current_location()[0] + window.size[0] // 2 - toast_window.size[0] // 2, window.current_location()[1] + window.size[1] // 2 - toast_window.size[1] // 2)
+    toast_window.TKroot.after(duration, toast_window.close)
+
+#######################################
+# PySimpleGUI layout creation functions
+#######################################
+
+def create_mode_config_state_layout(wl_mode, config, state):
+    layout = [[]]
+    layout += selectable_text(f'wl_mode: {wl_mode}')
+    layout += [[sg.HorizontalSeparator()]]
+
+    config_header = [[sg.T(make_text_vertical('CONFIG'))]]
+
+    config_content = [[]]
+    for key in config:
+        value = f'{int(config[key], base=16)}'
+        config_content += selectable_text(f'{key}: {value}')
+
+    config_layout = [[sg.Column(config_header), sg.Column(config_content)]]
+
+    layout += config_layout
+    layout += [[sg.HorizontalSeparator()]]
+
+    state_header = [[sg.T(make_text_vertical('STATE'))]]
+
+    state_content = [[]]
+    for key in state:
+        if key == 'feistel_keys':
+            value = f'{int(state[key][0], base=16), int(state[key][1], base=16), int(state[key][2], base=16)}'
+        else:
+            value = f'{int(state[key], base=16)}'
+        state_content += selectable_text(f'{key}: {value}')
+
+    state_layout = [[sg.Column(state_header), sg.Column(state_content)]]
+
+    layout += state_layout
+
+    return layout
+
+def create_advanced_layout(json_dict):
+    wl_mode = json_dict.pop('wl_mode')
+    erase_counts = json_dict.pop('erase_counts')
+
+    config = json_dict.pop('config')
+    state = json_dict.pop('state')
+    sector_count = int(state['max_pos'], base=16) - 1
+
+    updaterate = int(config['updaterate'], base=16)
+
+    # calculate overall erase count from records
+    overall_ec_records = 0
+    for ec in erase_counts:
+        overall_ec_records += updaterate * int(erase_counts[ec])
+
+    # and overall erase count from recovered pos, move_count and cycle_count
+    pos = int(state['pos'], base=16)
+    max_pos = int(state['max_pos'], base=16)
+    move_count = int(state['move_count'], base=16)
+    cycle_count = int(state['cycle_count'], base=16)
+
+    # calculate the erase count in multiple steps
+    overall_ec_pos_mc_cc = pos * updaterate
+    overall_ec_pos_mc_cc += move_count * max_pos * updaterate
+    overall_ec_pos_mc_cc += cycle_count * max_pos * (max_pos - 1) * updaterate
+
+    # create a layout for left column listing info from config and state structs
+    left_layout = create_mode_config_state_layout(wl_mode, config, state)
+
+    # layout for graph, will draw later
+    graph_layout = [[sg.Canvas(key='-CANVAS-')]]
+
+    # layout for buttons, use constants for names as they become action names also
+    buttons_layout = [[sg.B(TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY)],[sg.B(EXPORT_PLOTLY_HTML_BUTTON_KEY)]]
+
+    right_layout = [[]]
+    right_layout += selectable_text(f'Sector count: {sector_count}')
+
+    # if reconstructed erase counts mismatch, show the greater value just to be safe
+    if overall_ec_records != overall_ec_pos_mc_cc:
+        right_layout += selectable_text('Warning: Erase count reconstruction mismatch!', text_color='red')
+        right_layout += selectable_text(f'Overall erase count: <= {max(overall_ec_records, overall_ec_pos_mc_cc)}')
+    else:
+        # else if they are equal, show one value
+        right_layout += selectable_text(f'Overall erase count: {overall_ec_records}')
+
+    right_layout += [[sg.HorizontalSeparator()]]
+    right_layout += buttons_layout
+
+    # overall layout with three columns
+    layout = [[sg.Column(left_layout), sg.Column(graph_layout), sg.Column(right_layout)]]
+
+    heatmap, fig, ax = plot_erase_count_heatmap(erase_counts, sector_count, updaterate)
+
+    return layout, heatmap, fig, ax
+
+def create_base_layout(json_dict):
+    wl_mode = json_dict.pop('wl_mode')
+    config = json_dict.pop('config')
+    state = json_dict.pop('state')
+
+    layout = create_mode_config_state_layout(wl_mode, config, state)
+
+    return layout
+
+def create_error_layout(json_dict, message='WLmon reports'):
+    layout = [[sg.T(f'{message}: {json_dict}\nRun idf.py monitor on wlmon (with verbose logging enabled) to learn more')]]
+    return layout
 
 def main():
     """
     Main function for espwlmon
     """
-
-    # firstly setup needed ESP-IDF imports
-    idf_setup()
-
     parser = argparse.ArgumentParser(
         description=f"espwlmon.py v{__version__} - Flash Wear Leveling Monitoring Utility for devices with Espressif chips",
         prog="espwlmon",
     )
-
-    subparsers = parser.add_subparsers(
-        dest="operation", help="Run espwlmon.py {command} -h for additional help"
-    )
-
-    parser_flash = subparsers.add_parser(
-        "flash", help="Flashes data-collector to newly created test app partition.\
-            Requires adequate free space in flash after last existing partition.\
-            Meant for 'Boot from Test Firmware', see api-guides docs for more info"
-    )
-    parser_flash.add_argument(
-        "--port",
-        "-p",
-        help="Serial port device",
-        required=True
-    )
-
-    parser_monitor = subparsers.add_parser(
-        "monitor", help="Start monitoring data collector output"
-    )
-    parser_monitor.add_argument(
+    parser.add_argument(
         "--port",
         "-p",
         help="Serial port device",
@@ -206,32 +493,7 @@ def main():
     args = parser.parse_args(argv)
     print(f"espwlmon.py v{__version__}")
 
-    if args.operation is None:
-        parser.print_help()
-        sys.exit(1)
-
-
-    if args.operation == "flash":
-        flash()
-    elif args.operation == "monitor":
-        monitor(args.port)
-
-def cleanup(exit_code):
-    if os.path.isfile(PARTITION_TABLE_OLD_BIN):
-        os.remove(PARTITION_TABLE_OLD_BIN)
-    if os.path.isfile(PARTITION_TABLE_NEW_BIN):
-        os.remove(PARTITION_TABLE_NEW_BIN)
-
-    sys.exit(exit_code)
-
-def _main():
-    try:
-        main()
-    except FatalError as fatal_error:
-        print(f"\nA fatal error occurred: {fatal_error}")
-        sys.exit(2)
-    finally:
-        cleanup(0)
+    monitor(args.port)
 
 if __name__ == "__main__":
-    _main()
+    main()
