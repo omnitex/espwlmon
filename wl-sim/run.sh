@@ -54,7 +54,7 @@ fi
 past_runs=$(eval cat $file | wc -l)
 
 # max simulation runs for given parameter combination (each combination => unique file name)
-N_MAX=30
+N_MAX=100
 
 # if past runs have not reached max number, calculate remaining runs
 if [[ "$past_runs" -lt "$N_MAX" ]]; then
