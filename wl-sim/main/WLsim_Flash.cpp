@@ -25,6 +25,9 @@ static size_t move_count = 0;
 static uint32_t cycle_count = 0;
 
 // array for keeping per sector erase counts
+// + 1 to also include dummy sector, which is reserved in FLASH_SIZE calculation
+// so there are SECTOR_COUNT usable and addressable sectors, but for calculating statistics
+// we need to make space for additional dummy sector which can also be the result of mapping
 static uint32_t erase_counts[SECTOR_COUNT + 1] = {0};
 
 // 3 keys for 3 stage unbalanced Feistel network
@@ -177,6 +180,7 @@ esp_err_t erase_sector(size_t sector)
 
     ESP_LOGV(TAG, "%s - virt_addr= 0x%08x, phy_sector= 0x%08x", __func__, (uint32_t) virt_addr, (uint32_t) phy_sector);
 
+    // possible physical sector locations are SECTOR_COUNT+1 due to dummy sector
     erase_counts[phy_sector]++;
 
     // reached maximum lifetime of a sector
@@ -229,7 +233,8 @@ void print_output()
     uint64_t sum = 0;
     uint32_t min = UINT32_MAX, max = 0, nonzeros = 0;
 
-    for (size_t i = 0; i <= SECTOR_COUNT; i++) {
+    // + 1 to include dummy sector as it can also be the result of mapping
+    for (size_t i = 0; i < SECTOR_COUNT + 1; i++) {
         uint32_t count = erase_counts[i];
         if (count != 0) {
             sum += count;
@@ -247,7 +252,8 @@ void print_output()
     //       Total Writes Before System Failure
     // NE = ------------------------------------ x 100%
     //               Wmax x Num Sectors
-    NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * SECTOR_COUNT)) * 100;
+    // and +1 for dummy sector here as well
+    NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * (SECTOR_COUNT + 1)) * 100);
 
     printf("NE %f cycle_walks %u restarted %u\n", NE, feistel_cycle_walks, restarted);
 }
