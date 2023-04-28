@@ -30,6 +30,10 @@ protected:
     size_t addr_erase_counts1;
     size_t addr_erase_counts2;
 
+    uint8_t feistel_bit_width;
+    uint8_t feistel_msb_width;
+    uint8_t feistel_lsb_width;
+
     virtual esp_err_t updateEraseCounts();
     virtual esp_err_t writeEraseCounts(size_t erase_counts_addr);
     virtual esp_err_t readEraseCounts();

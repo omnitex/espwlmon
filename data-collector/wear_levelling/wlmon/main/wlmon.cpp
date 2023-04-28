@@ -36,7 +36,7 @@ esp_err_t checkConfigCRC(wl_config_t *cfg)
  *
  * @return
  *       - ESP_OK, if config was read, is valid and written correctly;
- *       - ESP_ERR_NOT_SUPPORTED, if partition has encrypted flag set (TODO could we work with encrypted parititon?)
+ *       - ESP_ERR_NOT_SUPPORTED, if partition has encrypted flag set
  *       - ESP_ERR_INVALID_CRC, if config CRC failed to match its stored CRC
 */
 esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
@@ -61,14 +61,14 @@ esp_err_t get_wl_config(wl_config_t *cfg, const esp_partition_t *partition)
 }
 
 /**
- * @brief Find and return WL partition, if present (in flash or in partition image, target vs linux, TODO).
+ * @brief Find and return WL partition, if present in flash
  *
  * @param[out] partition Pointer for passing found (or constructed) WL partition
  *
  * @return
  *       - ESP_OK, if WL partition is found and config is retrieved, including CRC check
  *       - ESP_ERR_NOT_FOUND, if no candidate for WL partition was found
- *       - ESP_ERR_NOT_SUPPORTED, if last processed candidate paritition was encrypted
+ *       - ESP_ERR_NOT_SUPPORTED, if last processed candidate partition was encrypted
  *       - ESP_ERR_INVALID_CRC, if last processed candidate partition failed config CRC check
  *       - ESP_ERR_NOT_FOUND, if no candidate partition is found
 */

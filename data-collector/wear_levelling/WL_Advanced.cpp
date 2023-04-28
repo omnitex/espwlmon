@@ -6,9 +6,6 @@
 #include "crc32.h"
 
 static const char *TAG = "wl_advanced";
-static uint8_t feistel_bit_width;
-static uint8_t feistel_msb_width;
-static uint8_t feistel_lsb_width;
 
 #ifndef WL_CFG_CRC_CONST
 #define WL_CFG_CRC_CONST UINT32_MAX
@@ -87,7 +84,7 @@ esp_err_t WL_Advanced::init()
     // calculate bits needed for sector addressing and in turn for Feistel network
     // feistel_bit_width = log2(sector_count)
     uint32_t sector_count = this->flash_size / this->cfg.sector_size;
-    for (feistel_bit_width = 0; sector_count; feistel_bit_width++) {
+    for (this->feistel_bit_width = 0; sector_count; this->feistel_bit_width++) {
         sector_count >>= 1;
     }
 
@@ -98,10 +95,10 @@ esp_err_t WL_Advanced::init()
     * msb = feistel_bit_width - lsb
     * For usage of calculated bit widths see addressFeistelNetwork()
     */
-    feistel_lsb_width = (feistel_bit_width + 1) / 2;
-    feistel_msb_width = feistel_bit_width - feistel_lsb_width;
+    this->feistel_lsb_width = (this->feistel_bit_width + 1) / 2;
+    this->feistel_msb_width = this->feistel_bit_width - this->feistel_lsb_width;
 
-    ESP_LOGD(TAG, "%s: feistel_bit_width=%u, msb=%u, lsb=%u", __func__, feistel_bit_width, feistel_msb_width, feistel_lsb_width);
+    ESP_LOGD(TAG, "%s: feistel_bit_width=%u, msb=%u, lsb=%u", __func__, this->feistel_bit_width, this->feistel_msb_width, this->feistel_lsb_width);
 
     wl_advanced_state_t *state_main = (wl_advanced_state_t *)&this->state;
     wl_advanced_state_t _state_copy;
@@ -267,7 +264,7 @@ esp_err_t WL_Advanced::initSections()
     WL_RESULT_CHECK(result);
 
     uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
-    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u) for bit with %u", __func__, keys[0], keys[1], keys[2], feistel_bit_width);
+    ESP_LOGD(TAG, "%s: generated Feistel keys (%u, %u, %u) for bit with %u", __func__, keys[0], keys[1], keys[2], this->feistel_bit_width);
 
     return result;
 }
@@ -717,7 +714,7 @@ size_t WL_Advanced::addressFeistelNetwork(size_t addr)
     uint8_t *keys = (uint8_t *)&advanced_state->feistel_keys;
 
     // mask for only lower lsb bits
-    uint32_t LSB_mask = ~( (~(size_t)0) << feistel_lsb_width );
+    uint32_t LSB_mask = ~( (~(size_t)0) << this->feistel_lsb_width );
 
     uint32_t msb, lsb, _msb, _lsb, randomized_sector_addr;
 
@@ -729,7 +726,7 @@ round:
     for (uint8_t i = 0; i < 3; i++) {
 
         // get separated and correctly shifted and masked lsb, msb values from current sector address
-        msb = sector_addr >> feistel_lsb_width;
+        msb = sector_addr >> this->feistel_lsb_width;
         lsb = sector_addr & LSB_mask;
 
         // msb output of this stage, stays intact
@@ -742,7 +739,7 @@ round:
 
         // assemble address, swapping msb and lsb
         // full output of this stage
-        sector_addr = (_lsb << feistel_msb_width) | _msb;
+        sector_addr = (_lsb << this->feistel_msb_width) | _msb;
         ESP_LOGV(TAG, "%s: msb=0x%x, lsb=0x%x, sector_addr=0x%x", __func__, _msb, _lsb, sector_addr);
     }
 

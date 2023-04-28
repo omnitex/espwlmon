@@ -9,7 +9,6 @@
 #endif
 
 #define WLMON_DEFAULT_BUF_SIZE 500
-#define WLMON_BUF_SIZE 4096
 
 typedef enum WL_MODE { WL_MODE_UNDEFINED = 0, WL_MODE_BASE, WL_MODE_ADVANCED } wl_mode_t;
 
