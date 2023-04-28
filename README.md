@@ -6,7 +6,12 @@ Project includes an extended version of [base wear leveling](https://docs.espres
 
 ## Installation and usage
 
-### 0. Clone repo
+### 0. Prerequisites and cloning
+
+- Set up `ESP-IDF` on your system. Currently the **only tested version is `v5.0`**.  For instructions see Espressif's [get started guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html)
+- Get yourself a `Python3` installation with `tkinter` for running the GUI part of this project. This will heavily depend on your system and current installations/configurations, so you're on your own for this one
+
+Once ready to proceed, clone this repo
 
 ```
 git clone https://github.com/omnitex/espwlmon.git && cd espwlmon
@@ -31,13 +36,15 @@ This will allow `WL_Advanced` to initialize all structures in flash from a clean
 
 ### 2a. Test with `erase_stress_example`
 
+*Warning: Running this will repeatedly perform erases in flash memory of you device, (really) slowly wearing it out.*
+
 ```
 cd erase_stress_example && idf.py flash monitor
 ```
 
 The provided example is a simple project for testing FAT read/write + memory erase stressing which builds up `WL_Advanced` records about sector erases in flash.
 
-Letting it run fully will take some time. Feel free to stop it after at least a run or two (see the logs while it runs) and move onto step 3.
+Letting it run fully will take some time. Feel free to stop it after at least a run or two (see the logs while it runs) and move onto step 3. But keep in mind the longer it runs the better - at least for visualization in step 4.
 
 ### 2b. Run your own project
 
@@ -64,11 +71,8 @@ This will flash the embedded part of the monitoring tool to your device. Making 
 
 Navigate back to the root of this repo, wherever you've cloned it and run the following.
 
-<!-- TODO pip vs pip3 -->
 ```
-pip3 install -r requirements.txt
-```
-```
+python3 -m pip install -r requirements.txt
 python3 espwlmon.py --port PORT
 ```
 
