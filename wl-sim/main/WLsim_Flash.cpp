@@ -39,8 +39,6 @@ static uint32_t feistel_calls = 0;
 static uint32_t feistel_cycle_walks;
 // was Feistel initialized and should be used in calcAddr?
 static bool feistel = false;
-// normalized endurance
-static double NE;
 
 void init_feistel(bool verbose)
 {
@@ -253,7 +251,7 @@ void print_output()
     // NE = ------------------------------------ x 100%
     //               Wmax x Num Sectors
     // and +1 for dummy sector here as well
-    NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * (SECTOR_COUNT + 1)) * 100);
+    double NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * (SECTOR_COUNT + 1)) * 100);
 
     printf("NE %f cycle_walks %u restarted %u\n", NE, feistel_cycle_walks, restarted);
 }
