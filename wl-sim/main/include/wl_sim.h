@@ -10,6 +10,7 @@
 #define STATE_SIZE 0x2000
 #define CFG_SIZE 0x1000
 
+// -1 for reserving dummy sector
 #define FLASH_SIZE (((FULL_MEM_SIZE - STATE_SIZE * 2 - CFG_SIZE) / PAGE_SIZE - 1 ) * PAGE_SIZE)
 
 #define UPDATERATE 0x10

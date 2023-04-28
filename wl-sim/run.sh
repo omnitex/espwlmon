@@ -42,14 +42,33 @@ if [ "$1" = "test" ]; then
     exit 0
 fi
 
-# output log file with name based on current timestamp
-file="wl-sim.$1-$2-$3-$4-$5.$(date +%Y%m%d%H%M%S).log"
+# output log file with name based on simulation params
+file="wl-sim.$1-$2-$3-$4-$5.log"
 
-# register response Ctrl+C to remove log file and exit
-trap "rm -f $file; exit 0" SIGINT
+# if file does not exist i.e. from previous simulation runs, create it
+if [ ! -f $file ]; then
+    touch $file
+fi
 
-# number of simulation runs
-N=10
+# get number of past runs, where every line with simulation results == one run
+past_runs=$(eval cat $file | wc -l)
+
+# max simulation runs for given parameter combination (each combination => unique file name)
+N_MAX=100
+
+# if past runs have not reached max number, calculate remaining runs
+if [[ "$past_runs" -lt "$N_MAX" ]]; then
+    # number of simulation runs to add in this execution
+    N=$(($N_MAX - $past_runs))
+else
+    # otherwise set N to 0 so the following loop will not run
+    N=0
+fi
+
+if [[ "$N" > 0 ]]; then
+    echo "Detected $past_runs past results"
+    echo "Running..."
+fi
 
 # run wl-sim N times, appending output to file
 for ((i = 1; i <= $N; i++)); do
@@ -57,7 +76,7 @@ for ((i = 1; i <= $N; i++)); do
     $BINARY $1 $2 $3 $4 $5 2>&1 >> $file
     # nonzero return code signifies failure
     if [ "$?" != "0" ]; then
-        echo "Run $i/$N failed"
+        echo "Run $(($past_runs + $i))/$(($past_runs + $N)) failed"
         # run once again without redirecting stdout
         $BINARY $1 $2 $3 $4 $5
         echo "Example: $0 f z z 10 0"
@@ -66,11 +85,22 @@ for ((i = 1; i <= $N; i++)); do
         exit $?
     fi
     # otherwise report iteration number and wait a little bit for next round as address randomization is seeded by current timestamp
-    echo "($i/$N)"
+    # report x/N including past runs
+    echo "($(($past_runs + $i))/$(($past_runs + $N)))"
     sleep 0.01
 done
 
-# calculate average values of normalized endurance and cycle walks, append to file as well
-averages=$(eval cat $file | awk '{ NE_sum += $2; cycle_walk_sum += $4; restarted_sum += $6} END { print "avg(NE):", NE_sum/NR, "avg(cycle_walks):", cycle_walk_sum/NR, "avg(restarted):", restarted_sum/NR }')
-echo "$averages" >> $file
-echo "$averages"
+# if after the loop we got to the max number of results we wanted as set by N_MAX
+# calculate and report averages
+if [[ $(eval cat $file | wc -l) == $N_MAX ]]; then
+    averages=$(eval cat $file | awk '{ NE_sum += $2; cycle_walk_sum += $4; restarted_sum += $6} END { print "avg(NE):", NE_sum/NR, "avg(cycle_walks):", cycle_walk_sum/NR, "avg(restarted):", restarted_sum/NR }')
+    # also append to file
+    echo "$averages" >> $file
+    # and print
+    echo "Simulation finished!"
+    echo "$averages"
+else
+    # if not, that means averages got already appended, in that case, print them from the last line
+    echo "Results already calculated, reading from file:"
+    tail -n1 $file
+fi

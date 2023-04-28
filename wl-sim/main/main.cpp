@@ -21,7 +21,6 @@ int feistel_test();
 int main(int argc, char **argv)
 {
     srand(time(0));
-    esp_err_t result;
 
     // if single argument 'test', run the mapping correctness test
     if (argc == 2 && strcmp(argv[1], "test") == 0) {
@@ -39,7 +38,7 @@ int main(int argc, char **argv)
 \tBLOCKS_SIZE_FUNC: z for zipf, c for const\n\
 \tBLOCK_SIZE: N for max erase block size\n\
 \tRESTART_PROB: P for restart probability after every erase [per mille]\n");
-        return ESP_FAIL;
+        return -1;
     }
 
     // argument parsing
@@ -79,19 +78,19 @@ int main(int argc, char **argv)
     int erase_block_size = strtol(argv[4], &end, 10);
     if (*end != '\0') {
         fprintf(stderr, "Invalid erase block size '%s'!\n", argv[4]);
-        return ESP_FAIL;
+        return -1;
     } else if (erase_block_size <= 0) {
         fprintf(stderr, "Invalid erase block size %i, must be > 0\n", erase_block_size);
-        return ESP_FAIL;
+        return -1;
     }
 
     int restart_prob = strtol(argv[5], &end, 10);
     if (*end != '\0') {
         fprintf(stderr, "Invalid restart probability %s'!\n", argv[5]);
-        return ESP_FAIL;
+        return -1;
     } else if (restart_prob < 0) {
         fprintf(stderr, "Invalid restart probability %i, must be > 0 or 0 to turn off random restarting\n", restart_prob);
-        return ESP_FAIL;
+        return -1;
     }
 
     // if Feistel enabled from args, init keys and variables
@@ -100,15 +99,7 @@ int main(int argc, char **argv)
     }
 
     // runs until any sector reaches erase lifetime, see erase_sector()
-    for (;;) {
-        result = erase_range(addr_func(FLASH_SIZE), ERASE_SIZE * block_func(erase_block_size));
-
-        // non OK result returned only on sector reaching lifetime meaning we should end simulation run
-        if (result != ESP_OK) {
-            break;
-        }
-
-        // otherwise continue
+    while (erase_range(addr_func(FLASH_SIZE), ERASE_SIZE * block_func(erase_block_size)) == ESP_OK) {
 
         // if nonzero restart probability from arguments
         if (restart_prob != 0) {
