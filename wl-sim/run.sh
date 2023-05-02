@@ -87,13 +87,13 @@ for ((i = 1; i <= $N; i++)); do
     # otherwise report iteration number and wait a little bit for next round as address randomization is seeded by current timestamp
     # report x/N including past runs
     echo "($(($past_runs + $i))/$(($past_runs + $N)))"
-    sleep 0.01
+    sleep 0.5
 done
 
 # if after the loop we got to the max number of results we wanted as set by N_MAX
 # calculate and report averages
 if [[ $(eval cat $file | wc -l) == $N_MAX ]]; then
-    averages=$(eval cat $file | awk '{ NE_sum += $2; cycle_walk_sum += $4; restarted_sum += $6} END { print "avg(NE):", NE_sum/NR, "avg(cycle_walks):", cycle_walk_sum/NR, "avg(restarted):", restarted_sum/NR }')
+    averages=$(eval cat $file | awk '{ NE_sum += $2; cycle_walk_sum += $4; restarted_sum += $6; feistel_calls_sum += $8} END { print "avg(NE):", NE_sum/NR, "avg(cycle_walks):", cycle_walk_sum/NR, "avg(restarted):", restarted_sum/NR, "avg(feistel_calls):", feistel_calls_sum/NR, "CW_percent:", cycle_walk_sum/feistel_calls_sum*100 }')
     # also append to file
     echo "$averages" >> $file
     # and print

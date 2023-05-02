@@ -253,7 +253,7 @@ void print_output()
     // and +1 for dummy sector here as well
     double NE = ((double)sum / (double)(SECTOR_ERASE_ENDURANCE * (SECTOR_COUNT + 1)) * 100);
 
-    printf("NE %f cycle_walks %u restarted %u\n", NE, feistel_cycle_walks, restarted);
+    printf("NE %f cycle_walks %u restarted %u feistel_calls %u\n", NE, feistel_cycle_walks, restarted, feistel_calls);
 }
 
 void print_reconstructed()
