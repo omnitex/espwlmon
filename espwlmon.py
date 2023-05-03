@@ -18,8 +18,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import numpy as np
 
 # button text serving also as button element key and event name
-TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY = 'Toggle erase counts'
-EXPORT_PLOTLY_HTML_BUTTON_KEY = 'Export Plotly'
+TOGGLE_ERASE_COUNT_ANNOTATIONS_BUTTON_KEY = 'Toggle erase count visibility'
+EXPORT_PLOTLY_HTML_BUTTON_KEY = 'Export heatmap with Plotly'
 
 # list for keeping keys of input elements acting as selectable text elements
 selectable_texts_keys = list()
