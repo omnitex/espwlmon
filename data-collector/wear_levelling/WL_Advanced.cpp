@@ -88,6 +88,16 @@ esp_err_t WL_Advanced::init()
         sector_count >>= 1;
     }
 
+    // we are using 8 bit keys in Feistel network, where each key is XORed with half of sector address
+    // so if sector address has more than 16 bits, it cannot be split to two parts where each would be at max 8 bits long
+    // => such long sector addresses (for partition with more than 2^16 sectors) are currently not supported
+    // sidenote: extending key bit length is presumably possible, currently using only 3*8bits (for simplicity) out of 32bits randomly generated and saved in feistel_keys
+    if (this->feistel_bit_width > 16) {
+        ESP_LOGE(TAG, "%s: Wear leveled partition contains too many sectors for WL_Advanced!", __func__);
+        ESP_LOGE(TAG, "%s: Sector address cannot be properly randomized in current implementation of Feistel network.", __func__);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
     /*
     * split bit width to | msb | lsb |
     * if bit width not even, make lsb 1 longer (e.g. | 3 bits | 4bits |)
