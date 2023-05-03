@@ -77,16 +77,15 @@ def plot_cycle_walks(cycle_walks, name):
     plt.savefig(f"{OUTPUT_DIR}/{name}.pdf")
 
 
-#TODO redo all NE measurements with new longer sleep
 # results copied by hand
 # base vs advanced for constant address, constant block sizes and no restarting
 b_c_c_n_0 = (96.024, 96.0879, 96.1679, 96.3279, 96.4879, 96.6478, 96.8078)
-f_c_c_n_0 = (96.0244, 98.032, 98.7949, 99.5187, 99.6869, 99.7703, 99.7909)
+f_c_c_n_0 = (96.0249, 98.0844, 98.8179, 99.5179, 99.6849, 99.7731, 99.7871)
 plot(b_c_c_n_0, f_c_c_n_0, "NE_c_c_n_0")
 
 # base vs advanced for zipf address, constant block sizes, no restarting
-b_z_c_n_0 = (97.2029, 97.5096, 97.7502, 98.0624, 98.1132, 98.3063, 98.5889)
-f_z_c_n_0 = (98.6283, 98.9036, 99.0796, 99.2648, 99.3052, 99.3258, 99.3745)
+b_z_c_n_0 = (97.2214, 97.5189, 97.7243, 97.9864, 98.158, 98.4014, 98.59)
+f_z_c_n_0 = (98.6313, 98.9037, 99.1171, 99.2359, 99.3122, 99.3343, 99.359)
 plot(b_z_c_n_0, f_z_c_n_0, "NE_z_c_n_0")
 
 # cycle walks in percent out of total number of erases performed in full simulation of memory lifetime
