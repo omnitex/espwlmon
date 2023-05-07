@@ -27,7 +27,7 @@ cp -r data-collector/wear_levelling/ $IDF_PATH/components/
 
 <!-- TODO base->advanced will have to investigate -->
 ### 2. Erase current flash contents
-
+*`idf.py` requires to be run from ESP-IDF buildable project folder; for such the `erase_stress_example` from the next step can be used*
 ```
 idf.py erase-flash
 ```
